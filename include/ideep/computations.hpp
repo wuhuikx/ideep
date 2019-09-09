@@ -104,13 +104,13 @@ public:
   inline void init_internal(const descriptor_group& adesc) {
     inouts_ = s_vector<tensor>((unsigned)(inputs_num_ + outputs_num_));
 
-    std::unique_ptr<mkldnn_primitive_at_t []> inputs(new mkldnn_primitive_at_t [inputs_num_]);
+    std::unique_ptr<dnnl_primitive_at_t []> inputs(new dnnl_primitive_at_t [inputs_num_]);
     for (int i =0; i < inputs_num_; i ++) {
       inouts_[i] = {adesc.expected_descriptor_of(query::input_pd, i), nullptr };
       inputs[i] = { inouts_[i].get(), 0 };
     }
 
-    std::unique_ptr<const_mkldnn_primitive_t []> outputs(new const_mkldnn_primitive_t [outputs_num_]);
+    std::unique_ptr<const_dnnl_primitive_t []> outputs(new const_dnnl_primitive_t [outputs_num_]);
     for (int i = 0; i < outputs_num_; i ++) {
       inouts_[i + inputs_num_] = {adesc.expected_descriptor_of(query::output_pd, i), nullptr };
       outputs[i] = inouts_[i + inputs_num_].get();
@@ -237,19 +237,19 @@ struct sum : public computation,
   public utils::computation_cache<sum> {
   struct descriptor : public descriptor_group {
     descriptor(const scale_t& scales, const std::vector<tdesc_t>& inputs) {
-      mkldnn_primitive_desc_t result;
+      dnnl_primitive_desc_t result;
       auto c_api_inputs = tdesc_t::convert_to_c(inputs);
-      error::wrap_c_api(mkldnn_sum_primitive_desc_create(
+      error::wrap_c_api(dnnl_sum_primitive_desc_create(
             &result, nullptr, (int)c_api_inputs.size(), &scales[0], &c_api_inputs[0]),
           "could not create a sum primitive descriptor");
       reset(result);
     }
 
     descriptor(const scale_t& scales, const std::vector<tdesc_t>& inputs, const tdesc_t& output_desc) {
-      mkldnn_primitive_desc_t result;
+      dnnl_primitive_desc_t result;
       auto c_api_inputs = tdesc_t::convert_to_c(inputs);
-      error::wrap_c_api(mkldnn_sum_primitive_desc_create(
-              &result, output_desc.get_mkldnn_memory_desc_t(), (int)c_api_inputs.size(), &scales[0], &c_api_inputs[0]),
+      error::wrap_c_api(dnnl_sum_primitive_desc_create(
+              &result, output_desc.get_dnnl_memory_desc_t(), (int)c_api_inputs.size(), &scales[0], &c_api_inputs[0]),
           "could not create a sum primitive descriptor");
       reset(result);
     }
@@ -314,7 +314,7 @@ public:
   }
 };
 
-/// Convolution forward computation, this class represent a MKL-DNN
+/// Convolution forward computation, this class represent a DNNL
 /// convolution forward process, also manage old computation instances.
 struct convolution_forward: public computation,
   public utils::computation_cache<convolution_forward> {
@@ -326,21 +326,21 @@ struct convolution_forward: public computation,
         algorithm aalgorithm = algorithm::convolution_direct, prop_kind aprop_kind = prop_kind::forward,
         padding_kind apadding_kind = padding_kind::zero) {
       utils::validate_dims(strides, dilates, padding_l, padding_r);
-      mkldnn_convolution_desc_t data;
+      dnnl_convolution_desc_t data;
       auto src_data = src_desc.format_any();
       auto weights_data = weights_desc.format_any();
       auto bias_data = bias_desc.format_any();
       auto dst_data = attr.get_post_ops().has_op_kind(kind::sum) ?
-        *dst_desc.get_mkldnn_memory_desc_t() : dst_desc.format_any();
+        *dst_desc.get_dnnl_memory_desc_t() : dst_desc.format_any();
       auto dilates_in = utils::get_compatible_dilates(dilates);
-      error::wrap_c_api(mkldnn_dilated_convolution_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), convert_to_c(aalgorithm),
+      error::wrap_c_api(dnnl_dilated_convolution_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), convert_to_c(aalgorithm),
             &src_data, &weights_data, &bias_data, &dst_data, &strides[0], &dilates_in[0],
-            &padding_l[0], &padding_r[0], mkldnn::convert_to_c(apadding_kind)),
+            &padding_l[0], &padding_r[0], dnnl::convert_to_c(apadding_kind)),
           "could not create a dilated convolution forward descriptor");
       auto dims = weights_desc.ndims();
       if (dims == 5 && (src_desc.get_dim(1) / weights_desc.get_dim(0)) % 4 != 0) {
-        // this will be removed after mkldnn v2.0 released
+        // this will be removed after dnnl v2.0 released
         std::string info_str ="gemm";
         create_primitive_desc_by_info_str_v2(info_str, data, attr);
       } else {
@@ -521,11 +521,11 @@ struct convolution_forward: public computation,
     weights_in.make_group(group);
 
     // FIXME: workaroud winograd format issue in inference
-    // If prop_kind == forward_inference, the mkldnn_wino_fmt for weights is required by winograd primitive.
-    // Then, in the cases of variable input shape, the detials of mkldnn_wino_fmt will be changed.
+    // If prop_kind == forward_inference, the dnnl_wino_fmt for weights is required by winograd primitive.
+    // Then, in the cases of variable input shape, the detials of dnnl_wino_fmt will be changed.
     // And, extra weihgts reorder is inevitable each time, leading to bad performance.
     // Here, we set the prop_kind to forward, in order to reorder and cache weights as blocked format,
-    // instead of mkldnn_wino_fmt.
+    // instead of dnnl_wino_fmt.
     auto apkind = aprop_kind;
     if (aalgorithm == algorithm::convolution_winograd && aprop_kind == prop_kind::forward_inference) {
       apkind = prop_kind::forward;
@@ -651,11 +651,11 @@ struct convolution_forward: public computation,
     tdesc_t weights_desc(dims_in, dtype, grouped ? format::goihw : format::oihw);
 
     // FIXME: workaroud winograd format issue in inference
-    // If prop_kind == forward_inference, the mkldnn_wino_fmt for weights is required by winograd primitive.
-    // Then, in the cases of variable input shape, the detials of mkldnn_wino_fmt will be changed.
+    // If prop_kind == forward_inference, the dnnl_wino_fmt for weights is required by winograd primitive.
+    // Then, in the cases of variable input shape, the detials of dnnl_wino_fmt will be changed.
     // And, extra weihgts reorder is inevitable each time, leading to bad performance.
     // Here, we set the prop_kind to forward, in order to reorder and cache weights as blocked format,
-    // instead of mkldnn_wino_fmt.
+    // instead of dnnl_wino_fmt.
     auto apkind = aprop_kind;
     if (aalgorithm == algorithm::convolution_winograd && aprop_kind == prop_kind::forward_inference) {
       apkind = prop_kind::forward;
@@ -680,15 +680,15 @@ struct convolution_backward_data : public computation,
         algorithm aalgorithm = algorithm::convolution_direct, padding_kind apadding_kind = padding_kind::zero)
       : hint_(gradx_desc, weights_desc, tdesc_t(), grady_desc, strides, dilates, padding_l, padding_r)  {
       utils::validate_dims(strides, dilates, padding_l, padding_r);
-      mkldnn_convolution_desc_t data;
+      dnnl_convolution_desc_t data;
       auto diff_src_any = gradx_desc.format_any();
       auto weights_any = weights_desc.format_any();
       auto diff_dst_any = grady_desc.format_any();
       auto dilates_in = utils::get_compatible_dilates(dilates);
-      error::wrap_c_api(mkldnn_dilated_convolution_backward_data_desc_init(
+      error::wrap_c_api(dnnl_dilated_convolution_backward_data_desc_init(
             &data, convert_to_c(aalgorithm), &diff_src_any, &weights_any, &diff_dst_any,
             &strides[0], &dilates_in[0], &padding_l[0], &padding_r[0],
-            mkldnn::convert_to_c(apadding_kind)),
+            dnnl::convert_to_c(apadding_kind)),
           "could not create a convolution backward data descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -740,18 +740,18 @@ struct convolution_backward_weights : public computation,
         padding_kind apadding_kind = padding_kind::zero)
       : hint_(x_desc, gradw_desc, gradb_desc, grady_desc, strides, dilates, padding_l, padding_r) {
       utils::validate_dims(strides, dilates, padding_l, padding_r);
-      mkldnn_convolution_desc_t data;
+      dnnl_convolution_desc_t data;
       auto src_any = x_desc.format_any();
       auto diff_weights_any = gradw_desc.format_any();
       auto diff_bias_any = gradb_desc.format_any();
       auto diff_dst_any = grady_desc.format_any();
       auto dilates_in = utils::get_compatible_dilates(dilates);
-      error::wrap_c_api(mkldnn_dilated_convolution_backward_weights_desc_init(
+      error::wrap_c_api(dnnl_dilated_convolution_backward_weights_desc_init(
             &data, convert_to_c(aalgorithm), &src_any, &diff_weights_any, &diff_bias_any,
             &diff_dst_any, &strides[0], &dilates_in[0], &padding_l[0], &padding_r[0],
-            mkldnn::convert_to_c(apadding_kind)),
+            dnnl::convert_to_c(apadding_kind)),
           "could not create a convolution backward weights descriptor");
-      mkldnn_primitive_desc_t result;
+      dnnl_primitive_desc_t result;
       create_primitive_desc(data, hint_.get());
     }
 
@@ -833,16 +833,16 @@ struct convolution_transpose_forward : public computation,
         prop_kind aprop_kind = prop_kind::forward,
         padding_kind apadding_kind = padding_kind::zero) {
       utils::validate_dims(strides, padding_l, padding_r);
-      mkldnn_deconvolution_desc_t data;
+      dnnl_deconvolution_desc_t data;
       auto src_data = src_desc.format_any();
       auto weights_data = weights_desc.format_any();
       auto bias_data = bias_desc.format_any();
       auto dst_data = dst_desc.format_any();
       auto dilates_in = utils::get_compatible_dilates(dilates);
       error::wrap_c_api(
-          mkldnn_dilated_deconvolution_forward_desc_init(&data, mkldnn::convert_to_c(aprop_kind),
+          dnnl_dilated_deconvolution_forward_desc_init(&data, dnnl::convert_to_c(aprop_kind),
               convert_to_c(aalgorithm), &src_data, &weights_data, &bias_data, &dst_data, &strides[0],
-              &dilates_in[0], &padding_l[0], &padding_r[0], mkldnn::convert_to_c(apadding_kind)),
+              &dilates_in[0], &padding_l[0], &padding_r[0], dnnl::convert_to_c(apadding_kind)),
           "could not create a deconvolution forward descriptor");
       create_primitive_desc_v2(data, attr);
     }
@@ -941,10 +941,10 @@ struct convolution_transpose_backward_data : public computation,
       auto weights_any = weights_desc.format_any();
       auto diff_dst_any = grady_desc.format_any();
       auto dilates_in = utils::get_compatible_dilates(dilates);
-      mkldnn_deconvolution_desc_t data;
-      error::wrap_c_api(mkldnn_dilated_deconvolution_backward_data_desc_init(
+      dnnl_deconvolution_desc_t data;
+      error::wrap_c_api(dnnl_dilated_deconvolution_backward_data_desc_init(
               &data, convert_to_c(aalgorithm), &diff_src_any, &weights_any, &diff_dst_any, &strides[0],
-              &dilates_in[0], &padding_l[0], &padding_r[0], mkldnn::convert_to_c(apadding_kind)),
+              &dilates_in[0], &padding_l[0], &padding_r[0], dnnl::convert_to_c(apadding_kind)),
           "could not create a deconvolution backward data descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1004,7 +1004,7 @@ struct convolution_transpose_backward_weights : public computation,
         padding_kind apadding_kind = padding_kind::zero)
         : hint_(x_desc, gradw_desc, gradb_desc, grady_desc, strides, dilates, padding_l, padding_r) {
       utils::validate_dims(strides, padding_l, padding_r);
-      mkldnn_deconvolution_desc_t data;
+      dnnl_deconvolution_desc_t data;
       auto src_any = x_desc.format_any();
       auto diff_weights_any = gradw_desc.format_any();
       auto diff_bias_any = gradb_desc.format_any();
@@ -1012,9 +1012,9 @@ struct convolution_transpose_backward_weights : public computation,
       auto dilates_in = utils::get_compatible_dilates(dilates);
 
       error::wrap_c_api(
-          mkldnn_dilated_deconvolution_backward_weights_desc_init(&data, convert_to_c(aalgorithm),
+          dnnl_dilated_deconvolution_backward_weights_desc_init(&data, convert_to_c(aalgorithm),
               &src_any, &diff_weights_any, &diff_bias_any, &diff_dst_any, &strides[0],
-              &dilates_in[0], &padding_l[0], &padding_r[0], mkldnn::convert_to_c(apadding_kind)),
+              &dilates_in[0], &padding_l[0], &padding_r[0], dnnl::convert_to_c(apadding_kind)),
           "could not create a deconvolution backward weights descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1031,8 +1031,8 @@ struct convolution_transpose_backward_weights : public computation,
   }
 
   /*
-   * This interface require MKL-DNN fixed
-   * https://github.com/intel/mkl-dnn/commit/86f152b614c947b87633062a182c57775856a348
+   * This interface require DNNL fixed
+   * https://github.com/intel/dnnl/commit/86f152b614c947b87633062a182c57775856a348
    */
   template <class alloc, bool with_gradb, typename... Ts>
   static void compute_impl(const tensor& src, const tensor& grady, const tdims_t& gradw_dims,
@@ -1085,9 +1085,9 @@ struct lrn_forward : public computation,
   struct descriptor : public descriptor_group {
     descriptor (const tdesc_t& x_desc, int local_size, float alpha, float beta, float k = 1.0,
         algorithm aalgorithm = algorithm::lrn_across_channels, prop_kind aprop_kind = prop_kind::forward) {
-      mkldnn_lrn_desc_t data;
-      auto src_data = x_desc.get_mkldnn_memory_desc_t();
-      error::wrap_c_api(mkldnn_lrn_forward_desc_init(&data, mkldnn::convert_to_c(aprop_kind),
+      dnnl_lrn_desc_t data;
+      auto src_data = x_desc.get_dnnl_memory_desc_t();
+      error::wrap_c_api(dnnl_lrn_forward_desc_init(&data, dnnl::convert_to_c(aprop_kind),
             convert_to_c(aalgorithm), src_data, local_size, alpha, beta, k),
           "could not create a lrn forward descriptor");
       create_primitive_desc(data);
@@ -1159,10 +1159,10 @@ struct lrn_backward : public computation,
     descriptor(const tdesc_t& x_desc, const tdesc_t& gx_desc, int local_size, float alpha,
         float beta, float k = 1.0, algorithm aalgorithm = algorithm::lrn_across_channels)
       : hint_(x_desc, local_size, alpha, beta, k, aalgorithm) {
-      mkldnn_lrn_desc_t data;
-      error::wrap_c_api(mkldnn_lrn_backward_desc_init(
-            &data, convert_to_c(aalgorithm), gx_desc.get_mkldnn_memory_desc_t(),
-            x_desc.get_mkldnn_memory_desc_t(), local_size, alpha, beta, k),
+      dnnl_lrn_desc_t data;
+      error::wrap_c_api(dnnl_lrn_backward_desc_init(
+            &data, convert_to_c(aalgorithm), gx_desc.get_dnnl_memory_desc_t(),
+            x_desc.get_dnnl_memory_desc_t(), local_size, alpha, beta, k),
           "could not create a lrn backward descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1207,12 +1207,12 @@ struct pooling_forward : public computation,
         const tdims_t& kernel, const tdims_t& padding_l, const tdims_t& padding_r, algorithm aalgorithm,
         prop_kind aprop_kind = prop_kind::forward, padding_kind apadding_kind = padding_kind::zero) {
       utils::validate_dims(strides, kernel, padding_l, padding_r);
-      auto src_data = x_desc.get_mkldnn_memory_desc_t();
+      auto src_data = x_desc.get_dnnl_memory_desc_t();
       auto dst_data = y_desc.format_any();
-      mkldnn_pooling_desc_t data;
-      error::wrap_c_api(mkldnn_pooling_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), convert_to_c(aalgorithm), src_data, &dst_data,
-            &strides[0], &kernel[0], &padding_l[0], &padding_r[0], mkldnn::convert_to_c(apadding_kind)),
+      dnnl_pooling_desc_t data;
+      error::wrap_c_api(dnnl_pooling_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), convert_to_c(aalgorithm), src_data, &dst_data,
+            &strides[0], &kernel[0], &padding_l[0], &padding_r[0], dnnl::convert_to_c(apadding_kind)),
           "could not init a forward pooling descriptor");
       create_primitive_desc(data);
     }
@@ -1245,7 +1245,7 @@ public:
     fetch_or_create_m(comp, key, src.get_descriptor(), dst_desc, strides, kernel, padding_l,
         padding_r, aalgorithm, aprop_kind, apadding_kind);
 
-    bool with_workspace = true && aprop_kind == prop_kind::forward_training && aalgorithm == mkldnn::pooling_max;
+    bool with_workspace = true && aprop_kind == prop_kind::forward_training && aalgorithm == dnnl::pooling_max;
 
     if (dst != src) {
       dst.reinit<alloc>(comp.expected_dst_descriptor());
@@ -1278,10 +1278,10 @@ struct pooling_backward : public computation,
       : hint_(gradx_desc, grady_desc, strides, kernel, padding_l, padding_r, aalgorithm) {
       utils::validate_dims(strides, kernel, padding_l, padding_r);
       auto gradx_data = gradx_desc.format_any();
-      mkldnn_pooling_desc_t data;
-      error::wrap_c_api(mkldnn_pooling_backward_desc_init(
-            &data, convert_to_c(aalgorithm), &gradx_data, grady_desc.get_mkldnn_memory_desc_t(),
-            &strides[0], &kernel[0], &padding_l[0], &padding_r[0], mkldnn::convert_to_c(apadding_kind)),
+      dnnl_pooling_desc_t data;
+      error::wrap_c_api(dnnl_pooling_backward_desc_init(
+            &data, convert_to_c(aalgorithm), &gradx_data, grady_desc.get_dnnl_memory_desc_t(),
+            &strides[0], &kernel[0], &padding_l[0], &padding_r[0], dnnl::convert_to_c(apadding_kind)),
           "could not init a backward pooling descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1329,10 +1329,10 @@ struct eltwise_forward : public computation,
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& x_desc, float alpha = 0.0, float beta = 0.0,
         algorithm alg_kind = algorithm::eltwise_relu, prop_kind aprop_kind = prop_kind::forward) {
-      mkldnn_eltwise_desc_t data;
-      error::wrap_c_api(mkldnn_eltwise_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), mkldnn::convert_to_c(alg_kind),
-            x_desc.get_mkldnn_memory_desc_t(), alpha, beta),
+      dnnl_eltwise_desc_t data;
+      error::wrap_c_api(dnnl_eltwise_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), dnnl::convert_to_c(alg_kind),
+            x_desc.get_dnnl_memory_desc_t(), alpha, beta),
           "could not create a eltwise forward descriptor");
       create_primitive_desc(data);
     }
@@ -1386,10 +1386,10 @@ struct eltwise_backward : public computation,
     descriptor(const tdesc_t& grady_desc, const tdesc_t& x_desc, float alpha = 0.0,
         float beta = 0.0, algorithm alg_kind = algorithm::eltwise_relu)
       : hint_(x_desc, alg_kind) {
-      mkldnn_eltwise_desc_t data;
-      error::wrap_c_api(mkldnn_eltwise_backward_desc_init(
-            &data, mkldnn::convert_to_c(alg_kind), grady_desc.get_mkldnn_memory_desc_t(),
-            x_desc.get_mkldnn_memory_desc_t(), static_cast<float>(alpha), static_cast<float>(beta)),
+      dnnl_eltwise_desc_t data;
+      error::wrap_c_api(dnnl_eltwise_backward_desc_init(
+            &data, dnnl::convert_to_c(alg_kind), grady_desc.get_dnnl_memory_desc_t(),
+            x_desc.get_dnnl_memory_desc_t(), static_cast<float>(alpha), static_cast<float>(beta)),
           "could not create a eltwise backward descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1436,9 +1436,9 @@ struct channel_shuffle_forward: public computation,
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& src_desc, const int group_size, const int axis = 1,
         prop_kind aprop_kind = prop_kind::forward) {
-      mkldnn_shuffle_desc_t data;
-      error::wrap_c_api(mkldnn_shuffle_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), src_desc.get_mkldnn_memory_desc_t(), axis, group_size),
+      dnnl_shuffle_desc_t data;
+      error::wrap_c_api(dnnl_shuffle_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), src_desc.get_dnnl_memory_desc_t(), axis, group_size),
           "could not create a shuffle forward descriptor");
       create_primitive_desc(data);
     }
@@ -1475,9 +1475,9 @@ struct channel_shuffle_backward : public computation,
   public utils::computation_cache<channel_shuffle_backward> {
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& grady_desc, const int group_size, const int axis = 1) {
-      mkldnn_shuffle_desc_t data;
-      error::wrap_c_api(mkldnn_shuffle_backward_desc_init(
-            &data, grady_desc.get_mkldnn_memory_desc_t(), static_cast<int>(axis), static_cast<int>(group_size)),
+      dnnl_shuffle_desc_t data;
+      error::wrap_c_api(dnnl_shuffle_backward_desc_init(
+            &data, grady_desc.get_dnnl_memory_desc_t(), static_cast<int>(axis), static_cast<int>(group_size)),
           "could not create a shuffle backward descriptor");
       create_primitive_desc(data);
     }
@@ -1508,19 +1508,19 @@ struct concat : public computation,
   public utils::computation_cache<concat> {
   struct descriptor : public descriptor_group {
     descriptor(int concat_dimension, const std::vector<tdesc_t>& inputs) {
-      mkldnn_primitive_desc_t result;
+      dnnl_primitive_desc_t result;
       auto c_api_inputs = tdesc_t::convert_to_c(inputs);
-      error::wrap_c_api(mkldnn_concat_primitive_desc_create(
+      error::wrap_c_api(dnnl_concat_primitive_desc_create(
             &result, nullptr, (int)c_api_inputs.size(), concat_dimension, &c_api_inputs[0]),
           "could not create a concat primitive descriptor");
       reset(result);
     }
 
     descriptor(int concat_dimension, const std::vector<tdesc_t>& inputs, const tdesc_t out_desc) {
-      mkldnn_primitive_desc_t result;
+      dnnl_primitive_desc_t result;
       auto c_api_inputs = tdesc_t::convert_to_c(inputs);
-      error::wrap_c_api(mkldnn_concat_primitive_desc_create(
-            &result, out_desc.get_mkldnn_memory_desc_t(), (int)c_api_inputs.size(), concat_dimension, &c_api_inputs[0]),
+      error::wrap_c_api(dnnl_concat_primitive_desc_create(
+            &result, out_desc.get_dnnl_memory_desc_t(), (int)c_api_inputs.size(), concat_dimension, &c_api_inputs[0]),
           "could not create a concat primitive descriptor");
       reset(result);
     }
@@ -1622,8 +1622,8 @@ public:
       dst.set_scale(min_scale);
 
     scale_t scales(1);
-    // FIXME: To avoid view issue in mkldnn
-    // NOTE: In mkldnn concat, dim 3 and 6+ are not supported.
+    // FIXME: To avoid view issue in dnnl
+    // NOTE: In dnnl concat, dim 3 and 6+ are not supported.
     // Morewhile, the tensor shape must be blockable to create a view.
     if (!add_axis && dst_dims.size() != 3 && dst_dims.size() < 6) {
       for (unsigned k = 0; k < inputs.size(); k++) {
@@ -1666,10 +1666,10 @@ struct softmax_forward : public computation,
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& x_desc, int softmax_axis,
         prop_kind aprop_kind = prop_kind::forward) {
-      mkldnn_softmax_desc_t data;
-      error::wrap_c_api(mkldnn_softmax_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind),
-            x_desc.get_mkldnn_memory_desc_t(), softmax_axis),
+      dnnl_softmax_desc_t data;
+      error::wrap_c_api(dnnl_softmax_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind),
+            x_desc.get_dnnl_memory_desc_t(), softmax_axis),
           "could not create a softmax forward descriptor");
       create_primitive_desc(data);
     }
@@ -1709,10 +1709,10 @@ struct softmax_backward : public computation,
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& grady_desc, const tdesc_t& y_desc, int softmax_axis)
       : hint_(y_desc, softmax_axis) {
-      mkldnn_softmax_desc_t data;
-      error::wrap_c_api(mkldnn_softmax_backward_desc_init(
-            &data, grady_desc.get_mkldnn_memory_desc_t(),
-            y_desc.get_mkldnn_memory_desc_t(), softmax_axis),
+      dnnl_softmax_desc_t data;
+      error::wrap_c_api(dnnl_softmax_backward_desc_init(
+            &data, grady_desc.get_dnnl_memory_desc_t(),
+            y_desc.get_dnnl_memory_desc_t(), softmax_axis),
           "could not create a softmax backward descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1755,17 +1755,17 @@ public:
 struct batch_norm_forward_base : public computation {
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& src_desc, float epsilon, unsigned flags, prop_kind aprop_kind) {
-      mkldnn_batch_normalization_desc_t data;
-      error::wrap_c_api(mkldnn_batch_normalization_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), src_desc.get_mkldnn_memory_desc_t(), epsilon, flags),
+      dnnl_batch_normalization_desc_t data;
+      error::wrap_c_api(dnnl_batch_normalization_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), src_desc.get_dnnl_memory_desc_t(), epsilon, flags),
           "could not create a batch normalization forward descriptor");
       create_primitive_desc(data);
     }
 
     descriptor(const tdesc_t& src_desc, float epsilon, attr_t attr, unsigned flags, prop_kind aprop_kind) {
-      mkldnn_batch_normalization_desc_t data;
-      error::wrap_c_api(mkldnn_batch_normalization_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), src_desc.get_mkldnn_memory_desc_t(), epsilon, flags),
+      dnnl_batch_normalization_desc_t data;
+      error::wrap_c_api(dnnl_batch_normalization_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), src_desc.get_dnnl_memory_desc_t(), epsilon, flags),
           "could not create a batch normalization forward descriptor");
       create_primitive_desc_v2(data, attr);
     }
@@ -1877,9 +1877,9 @@ private:
 struct batch_normalization_forward_training : public batch_norm_forward_base,
   public utils::computation_cache<batch_normalization_forward_training> {
   float get_epsilon() const {
-    const mkldnn_batch_normalization_desc_t* p_desc;
-    error::wrap_c_api(mkldnn_primitive_desc_query(get_mkldnn_primitive_desc_t(),
-        static_cast<mkldnn_query_t>(query::batch_normalization_d), 0, (void*)&p_desc),
+    const dnnl_batch_normalization_desc_t* p_desc;
+    error::wrap_c_api(dnnl_primitive_desc_query(get_dnnl_primitive_desc_t(),
+        static_cast<dnnl_query_t>(query::batch_normalization_d), 0, (void*)&p_desc),
       "could not query batch normalization descriptor");
     return p_desc->batch_norm_epsilon;
   }
@@ -1985,10 +1985,10 @@ struct batch_normalization_backward : public computation,
     descriptor(const tdesc_t& gradx_desc, const tdesc_t& x_desc,
         float epsilon, unsigned flags, prop_kind aprop_kind)
       : hint_(x_desc, epsilon, flags, prop_kind::forward_training) {
-      mkldnn_batch_normalization_desc_t data;
-      error::wrap_c_api(mkldnn_batch_normalization_backward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), gradx_desc.get_mkldnn_memory_desc_t(),
-            x_desc.get_mkldnn_memory_desc_t(), static_cast<float>(epsilon), flags),
+      dnnl_batch_normalization_desc_t data;
+      error::wrap_c_api(dnnl_batch_normalization_backward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), gradx_desc.get_dnnl_memory_desc_t(),
+            x_desc.get_dnnl_memory_desc_t(), static_cast<float>(epsilon), flags),
           "could not create a batch normalization backward descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -1997,18 +1997,18 @@ struct batch_normalization_backward : public computation,
   };
 
   float get_epsilon() const {
-    const mkldnn_batch_normalization_desc_t* p_desc;
-    error::wrap_c_api(mkldnn_primitive_desc_query(get_mkldnn_primitive_desc_t(),
-        static_cast<mkldnn_query_t>(query::batch_normalization_d), 0, (void*)&p_desc),
+    const dnnl_batch_normalization_desc_t* p_desc;
+    error::wrap_c_api(dnnl_primitive_desc_query(get_dnnl_primitive_desc_t(),
+        static_cast<dnnl_query_t>(query::batch_normalization_d), 0, (void*)&p_desc),
       "could not query batch normalization descriptor");
     return p_desc->batch_norm_epsilon;
   }
 
 public:
   prop_kind get_prop_kind() const {
-    const mkldnn_batch_normalization_desc_t* p_desc;
-    error::wrap_c_api(mkldnn_primitive_desc_query(get_mkldnn_primitive_desc_t(),
-        static_cast<mkldnn_query_t>(query::batch_normalization_d), 0, (void*)&p_desc),
+    const dnnl_batch_normalization_desc_t* p_desc;
+    error::wrap_c_api(dnnl_primitive_desc_query(get_dnnl_primitive_desc_t(),
+        static_cast<dnnl_query_t>(query::batch_normalization_d), 0, (void*)&p_desc),
       "could not query batch normalization descriptor");
     return static_cast<prop_kind>(p_desc->prop_kind);
   }
@@ -2097,18 +2097,18 @@ struct inner_product_forward: public computation,
     descriptor(const tdesc_t& src_desc, const tdesc_t& weights_desc, const tdesc_t& bias_desc,
         const tdesc_t& dst_desc, const attr_t& attr = attr_t(),
         prop_kind aprop_kind = prop_kind::forward) {
-      mkldnn_inner_product_desc_t data;
-      mkldnn_memory_desc_t weights_data;
+      dnnl_inner_product_desc_t data;
+      dnnl_memory_desc_t weights_data;
       auto src_data = src_desc.format_any();
       if (weights_desc.get_data_type() == tdtype_t::s8 ||
           weights_desc.get_data_type() == tdtype_t::u8)
         weights_data = weights_desc.format_any();
       else
-        weights_data = *weights_desc.get_mkldnn_memory_desc_t();
+        weights_data = *weights_desc.get_dnnl_memory_desc_t();
       auto bias_data = bias_desc.format_any();
       auto dst_data = dst_desc.format_any();
-      error::wrap_c_api(mkldnn_inner_product_forward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), &src_data, &weights_data, &bias_data, &dst_data),
+      error::wrap_c_api(dnnl_inner_product_forward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), &src_data, &weights_data, &bias_data, &dst_data),
           "could not create a inner product forward descriptor");
       create_primitive_desc_v2(data, attr);
     }
@@ -2344,10 +2344,10 @@ struct inner_product_backward_data: public computation,
     descriptor(const tdesc_t& gradx_desc, const tdesc_t& weights_desc, const tdesc_t& grady_desc)
       : hint_(gradx_desc, weights_desc, tdesc_t(), grady_desc) {
       auto diff_src_data = gradx_desc.format_any();
-      auto weights_data = weights_desc.get_mkldnn_memory_desc_t();
+      auto weights_data = weights_desc.get_dnnl_memory_desc_t();
       auto diff_dst_data = grady_desc.format_any();
-      mkldnn_inner_product_desc_t data;
-      error::wrap_c_api(mkldnn_inner_product_backward_data_desc_init(
+      dnnl_inner_product_desc_t data;
+      error::wrap_c_api(dnnl_inner_product_backward_data_desc_init(
             &data, &diff_src_data, weights_data, &diff_dst_data),
           "could not create a inner product backward data descriptor");
       create_primitive_desc(data, hint_.get());
@@ -2394,12 +2394,12 @@ struct inner_product_backward_weights : public computation,
   struct descriptor : public descriptor_group {
     descriptor(const tdesc_t& x_desc, const tdesc_t& gradw_desc, const tdesc_t& gradb_desc, const tdesc_t& grady_desc)
       : hint_(x_desc, gradw_desc, gradb_desc, grady_desc) {
-      mkldnn_inner_product_desc_t data;
+      dnnl_inner_product_desc_t data;
       auto src_data = x_desc.format_any();
       auto diff_dst_data = grady_desc.format_any();
       auto diff_weights_data = gradw_desc.format_any();
       auto diff_bias_data = gradb_desc.format_any();
-      error::wrap_c_api(mkldnn_inner_product_backward_weights_desc_init(
+      error::wrap_c_api(dnnl_inner_product_backward_weights_desc_init(
             &data, &src_data, &diff_weights_data, &diff_bias_data, &diff_dst_data),
           "could not create a inner product backward weights descriptor");
       create_primitive_desc(data, hint_.get());
@@ -2497,7 +2497,7 @@ public:
       compute_impl<uint8_t, alloc>(src, ratio, dst, mask);
       break;
     default:
-      throw error(mkldnn_invalid_arguments, "Unsupported mkldnn data type!");
+      throw error(dnnl_invalid_arguments, "Unsupported dnnl data type!");
     }
   }
 };
@@ -2540,7 +2540,7 @@ public:
       compute_impl<uint8_t, alloc>(mask, gy, gx);
       break;
     default:
-      throw error(mkldnn_invalid_arguments, "Unsupported mkldnn data type!");
+      throw error(dnnl_invalid_arguments, "Unsupported dnnl data type!");
     }
   }
 };
@@ -2591,10 +2591,10 @@ public:
         return;
       case ELTWISE_DIV:
       default:
-        throw error(mkldnn_invalid_arguments, "Not implemented!");
+        throw error(dnnl_invalid_arguments, "Not implemented!");
       }
     } else {
-      throw error(mkldnn_invalid_arguments, "Not implemented!");
+      throw error(dnnl_invalid_arguments, "Not implemented!");
     }
   }
 };
@@ -2605,26 +2605,26 @@ struct rnn_forward: public computation,
     descriptor(const tdesc_t& src_layer_desc, const tdesc_t& src_iter_desc,
         const tdesc_t& weights_layer_desc, const tdesc_t& weights_iter_desc, const tdesc_t& bias_desc,
         const tdesc_t& dst_layer_desc, const tdesc_t& dst_iter_desc, rnn_kind akind,
-        const mkldnn_rnn_direction_t direction, prop_kind aprop_kind = prop_kind::forward_inference) {
-      mkldnn_rnn_cell_desc_t rnn_cell_data;
-      mkldnn_rnn_desc_t rnn_data;
-      auto src_layer_data = src_layer_desc.get_mkldnn_memory_desc_t();
+        const dnnl_rnn_direction_t direction, prop_kind aprop_kind = prop_kind::forward_inference) {
+      dnnl_rnn_cell_desc_t rnn_cell_data;
+      dnnl_rnn_desc_t rnn_data;
+      auto src_layer_data = src_layer_desc.get_dnnl_memory_desc_t();
       auto src_iter_data = src_iter_desc.format_any();
       auto weights_layer_data = weights_layer_desc.format_any();
       auto weights_iter_data = weights_iter_desc.format_any();
       auto bias_data = bias_desc.format_any();
-      auto dst_layer_data = dst_layer_desc.get_mkldnn_memory_desc_t();
+      auto dst_layer_data = dst_layer_desc.get_dnnl_memory_desc_t();
       auto dst_iter_data = dst_iter_desc.format_any();
 
       auto algo = utils::rnn_kind_to_algorithm(akind);
       auto acti = utils::rnn_kind_to_activation(akind);
 
       error::wrap_c_api(
-          mkldnn_rnn_cell_desc_init(&rnn_cell_data, mkldnn::convert_to_c(algo),
-              mkldnn::convert_to_c(acti), 0U, 0, 0),
+          dnnl_rnn_cell_desc_init(&rnn_cell_data, dnnl::convert_to_c(algo),
+              dnnl::convert_to_c(acti), 0U, 0, 0),
           "could not create a rnn cell descriptor");
       error::wrap_c_api(
-          mkldnn_rnn_forward_desc_init(&rnn_data, mkldnn::convert_to_c(aprop_kind),
+          dnnl_rnn_forward_desc_init(&rnn_data, dnnl::convert_to_c(aprop_kind),
               &rnn_cell_data, direction, src_layer_data, &src_iter_data,
               &weights_layer_data, &weights_iter_data, &bias_data, dst_layer_data,
               &dst_iter_data),
@@ -2645,7 +2645,7 @@ public:
       const tensor& weights_layer, const tensor& weights_iter, const tensor& bias,
       const tdims_t& dst_layer_dims, tensor& dst_layer,
       const tdims_t& dst_iter_dims, tensor& dst_iter,
-      tensor& workspace, rnn_kind akind, mkldnn_rnn_direction_t direction,
+      tensor& workspace, rnn_kind akind, dnnl_rnn_direction_t direction,
       prop_kind aprop_kind = prop_kind::forward_training) {
     auto dtype = src_layer.get_data_type();
     tdesc_t dst_layer_desc(dst_layer_dims, dtype, src_layer.get_internal_format());
@@ -2709,10 +2709,10 @@ struct rnn_backward : public computation,
         const tdesc_t& diff_src_layer_desc, const tdesc_t& diff_src_iter_desc,
         const tdesc_t& diff_weights_layer_desc, const tdesc_t& diff_weights_iter_desc,
         const tdesc_t& diff_bias_desc, const tdesc_t& diff_dst_layer_desc,
-        const tdesc_t& diff_dst_iter_desc, rnn_kind akind, const mkldnn_rnn_direction_t direction,
+        const tdesc_t& diff_dst_iter_desc, rnn_kind akind, const dnnl_rnn_direction_t direction,
         prop_kind aprop_kind = prop_kind::backward) {
-      mkldnn_rnn_cell_desc_t rnn_cell_data;
-      mkldnn_rnn_desc_t data;
+      dnnl_rnn_cell_desc_t rnn_cell_data;
+      dnnl_rnn_desc_t data;
       auto src_layer_data = src_layer_desc.format_any();
       auto src_iter_data = src_iter_desc.format_any();
       auto weights_layer_data = weights_layer_desc.format_any();
@@ -2731,11 +2731,11 @@ struct rnn_backward : public computation,
       auto algo = utils::rnn_kind_to_algorithm(akind);
       auto acti = utils::rnn_kind_to_activation(akind);
       error::wrap_c_api(
-          mkldnn_rnn_cell_desc_init(&rnn_cell_data, mkldnn::convert_to_c(algo),
-              mkldnn::convert_to_c(acti), 0U, 0, 0),
+          dnnl_rnn_cell_desc_init(&rnn_cell_data, dnnl::convert_to_c(algo),
+              dnnl::convert_to_c(acti), 0U, 0, 0),
           "could not create a rnn cell descriptor");
-      error::wrap_c_api(mkldnn_rnn_backward_desc_init(
-            &data, mkldnn::convert_to_c(aprop_kind), &rnn_cell_data, direction, &src_layer_data,
+      error::wrap_c_api(dnnl_rnn_backward_desc_init(
+            &data, dnnl::convert_to_c(aprop_kind), &rnn_cell_data, direction, &src_layer_data,
             &src_iter_data, &weights_layer_data, &weights_iter_data, &bias_data, &dst_layer_data,
             &dst_iter_data, &diff_src_layer_data, &diff_src_iter_data, &diff_weights_layer_data,
             &diff_weights_iter_data, &diff_bias_data, &diff_dst_layer_data, &diff_dst_iter_data),
@@ -2756,7 +2756,7 @@ public:
       const tensor& weights_iter, const tensor& bias, const tensor& dst_layer, const tensor& dst_iter,
       const tensor& diff_dst_layer, const tensor& diff_dst_iter, const tensor& workspace,
       const bool with_bias, tensor& diff_src_layer, tensor& diff_src_iter, tensor& diff_weights_layer,
-      tensor& diff_weights_iter, tensor& diff_bias, rnn_kind akind, mkldnn_rnn_direction_t direction,
+      tensor& diff_weights_iter, tensor& diff_bias, rnn_kind akind, dnnl_rnn_direction_t direction,
       prop_kind aprop_kind = prop_kind::backward) {
     tdesc_t bias_desc;
     tdesc_t diff_bias_desc;

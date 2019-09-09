@@ -15,38 +15,38 @@
 namespace ideep {
 
 
-/// Param class handles operands to computations' internal, it wrappers MKL-DNN
+/// Param class handles operands to computations' internal, it wrappers DNNL
 /// memory primitive and provides utilities to manipulate underlying object.
 /// It's also the base class of tensor, handles major tensor services.
-class param: public c_wrapper<mkldnn_primitive_t> {
+class param: public c_wrapper<dnnl_primitive_t> {
 public:
-  using super = c_wrapper<mkldnn_primitive_t>;
-  using dims = mkldnn::memory::dims;
+  using super = c_wrapper<dnnl_primitive_t>;
+  using dims = dnnl::memory::dims;
   using dim_t = dims::value_type;
-  using data_type = mkldnn::memory::data_type;
+  using data_type = dnnl::memory::data_type;
 
-  /// Param descriptor class wrappers MKL-DNN memory primitive descriptor
+  /// Param descriptor class wrappers DNNL memory primitive descriptor
   /// and provides utilities to manipulate underlying object
-  struct descriptor : public c_wrapper<mkldnn_primitive_desc_t> {
+  struct descriptor : public c_wrapper<dnnl_primitive_desc_t> {
     friend class param;
-    inline static mkldnn_primitive_kind_t convert_to_c(kind akind) {
-      return static_cast<mkldnn_primitive_kind_t>(akind);
+    inline static dnnl_primitive_kind_t convert_to_c(kind akind) {
+      return static_cast<dnnl_primitive_kind_t>(akind);
     }
-    inline static mkldnn_data_type_t convert_to_c(data_type adata_type) {
-      return static_cast<mkldnn_data_type_t>(adata_type);
+    inline static dnnl_data_type_t convert_to_c(data_type adata_type) {
+      return static_cast<dnnl_data_type_t>(adata_type);
     }
-    inline static mkldnn_memory_format_t convert_to_c(format aformat) {
-      return static_cast<mkldnn_memory_format_t>(aformat);
+    inline static dnnl_memory_format_t convert_to_c(format aformat) {
+      return static_cast<dnnl_memory_format_t>(aformat);
     }
-    inline static std::vector<const_mkldnn_primitive_desc_t> convert_to_c(const std::vector<descriptor>& inputs) {
-      std::vector<const_mkldnn_primitive_desc_t> c_api_inputs;
+    inline static std::vector<const_dnnl_primitive_desc_t> convert_to_c(const std::vector<descriptor>& inputs) {
+      std::vector<const_dnnl_primitive_desc_t> c_api_inputs;
       c_api_inputs.reserve(inputs.size());
       auto convert_to_c = [](const descriptor& d) { return d.get(); };
       std::transform(inputs.begin(), inputs.end(), std::back_inserter(c_api_inputs), convert_to_c);
       return c_api_inputs;
     }
 
-    static inline void fill_param(mkldnn_memory_desc_t& md, const dims& adims, data_type adata_type, format aformat) {
+    static inline void fill_param(dnnl_memory_desc_t& md, const dims& adims, data_type adata_type, format aformat) {
       md.primitive_kind = convert_to_c(kind::memory);
       md.ndims = static_cast<int>(adims.size());
       std::copy(adims.begin(), adims.end(), md.dims);
@@ -68,9 +68,9 @@ public:
       }
     }
 
-    static inline void fill_blocking(mkldnn_memory_desc_t& md, const dims& adims,
+    static inline void fill_blocking(dnnl_memory_desc_t& md, const dims& adims,
         const dims& block_dims, const dims& stride, const dims& stride_inner) {
-      mkldnn_blocking_desc_t& blk = md.layout_desc.blocking;
+      dnnl_blocking_desc_t& blk = md.layout_desc.blocking;
       std::copy(block_dims.begin(), block_dims.end(), blk.block_dims);
       std::copy(stride.begin(), stride.end(), &blk.strides[0][0]);
       std::copy(stride_inner.begin(), stride_inner.end(), &blk.strides[1][0]);
@@ -85,12 +85,12 @@ public:
     descriptor(const dims& adims, data_type adata_type, const dims& stride,
         const dims block_dims = dims(12, 1), const dims stride_inner = dims(12, 1))
       : c_wrapper([&adims, adata_type, &block_dims, &stride, &stride_inner] {
-      mkldnn_memory_desc_t data;
+      dnnl_memory_desc_t data;
       fill_param(data, adims, adata_type, format::blocked);
       fill_blocking(data, adims, block_dims, stride, stride_inner);
 
-      mkldnn_primitive_desc_t result;
-      error::wrap_c_api(mkldnn_memory_primitive_desc_create(
+      dnnl_primitive_desc_t result;
+      error::wrap_c_api(dnnl_memory_primitive_desc_create(
             &result, &data, engine::cpu_engine().get()),
           "could not initialize a memory descriptor");
       return result;
@@ -99,17 +99,17 @@ public:
     /// Initiate a param descriptor, using format for blocking initialization.
     descriptor(const dims& adims, data_type adata_type, format aformat)
       :c_wrapper([&adims, adata_type, aformat]() {
-        mkldnn::memory::validate_dims(adims);
+        dnnl::memory::validate_dims(adims);
 
         // XXX: out of range enum might result unspecified behavior
-        mkldnn_memory_desc_t data;
-        error::wrap_c_api(mkldnn_memory_desc_init(
+        dnnl_memory_desc_t data;
+        error::wrap_c_api(dnnl_memory_desc_init(
               &data, (int)adims.size(), adims.size() == 0 ? nullptr : &adims[0],
               convert_to_c(adata_type), convert_to_c(aformat)),
             "could not initialize a memory descriptor");
 
-        mkldnn_primitive_desc_t result;
-        error::wrap_c_api(mkldnn_memory_primitive_desc_create(
+        dnnl_primitive_desc_t result;
+        error::wrap_c_api(dnnl_memory_primitive_desc_create(
               &result, &data, engine::cpu_engine().get()),
             "could not initialize a memory descriptor");
         return result;
@@ -120,21 +120,21 @@ public:
       : descriptor(adims, adata_type, engine::default_format((int)adims.size())) {}
 
     /// Initiate a descriptor from primitive_desc_t struct
-    descriptor(mkldnn_primitive_desc_t adesc, format aformat)
+    descriptor(dnnl_primitive_desc_t adesc, format aformat)
       : c_wrapper(adesc), public_format_(aformat) {}
 
     /// Initiate a descriptor from primitive_desc_t struct
-    descriptor(mkldnn_primitive_desc_t adesc) : descriptor(adesc,
-      public_format(convert_to_public_format(mkldnn_primitive_desc_query_memory_d(adesc)->format))) {}
+    descriptor(dnnl_primitive_desc_t adesc) : descriptor(adesc,
+      public_format(convert_to_public_format(dnnl_primitive_desc_query_memory_d(adesc)->format))) {}
 
     /// Initiate a descriptor from primitive_desc_t struct
-    descriptor(const_mkldnn_primitive_desc_t adesc, format aformat)
-      : c_wrapper(const_cast<mkldnn_primitive_desc_t>(adesc), true), public_format_(aformat) {}
+    descriptor(const_dnnl_primitive_desc_t adesc, format aformat)
+      : c_wrapper(const_cast<dnnl_primitive_desc_t>(adesc), true), public_format_(aformat) {}
 
     /// Initiate a descriptor from primitive_desc_t struct
-    descriptor(const_mkldnn_primitive_desc_t adesc)
+    descriptor(const_dnnl_primitive_desc_t adesc)
       : descriptor(adesc, public_format(convert_to_public_format(
-          mkldnn_primitive_desc_query_memory_d(adesc)->format))) {}
+          dnnl_primitive_desc_query_memory_d(adesc)->format))) {}
 
     /// Initiate a descriptor from another, share resource
     descriptor(const descriptor& adesc)
@@ -151,7 +151,7 @@ public:
     }
 
     inline void to_bytes(utils::bytestring& bytes) const {
-      auto* desc = get_mkldnn_memory_desc_t();
+      auto* desc = get_dnnl_memory_desc_t();
       utils::to_bytes(bytes, desc->data_type);
       utils::to_bytes(bytes, desc->format);
       for (int i = 0; i < desc->ndims; i++) {
@@ -173,40 +173,40 @@ public:
     /// Returns the number of bytes required to allocate the memory
     /// described including the padding area.
     inline size_t get_size() const {
-      return mkldnn_memory_primitive_desc_get_size(get());
+      return dnnl_memory_primitive_desc_get_size(get());
     }
 
     /// Returns number of dimensions
     inline int ndims() const {
-      return get_mkldnn_memory_desc_t()->ndims;
+      return get_dnnl_memory_desc_t()->ndims;
     }
 
   /// Return size of specified dimension
     inline dim_t get_dim(int index) const {
       if (index < 0 || index >= ndims()) return static_cast<dim_t>(0);
-      auto* internal = get_mkldnn_memory_desc_t();
+      auto* internal = get_dnnl_memory_desc_t();
       return internal->dims[index];
     }
 
     /// Returns dimension vector
     inline dims get_dims() const {
-      auto* internal = get_mkldnn_memory_desc_t();
+      auto* internal = get_dnnl_memory_desc_t();
       return dims(internal->dims, &internal->dims[internal->ndims]);
     }
 
     /// Returns descriptor data type
     inline data_type get_data_type() const {
-      auto* internal = get_mkldnn_memory_desc_t();
+      auto* internal = get_dnnl_memory_desc_t();
       return static_cast<data_type>(internal->data_type);
     }
 
-    /// Returns C API mkldnn_memory_desc_t structure which had same
+    /// Returns C API dnnl_memory_desc_t structure which had same
     /// dimension and data type but without format constrain.
-    mkldnn_memory_desc_t format_any() const {
-      mkldnn_memory_desc_t any;
-      const mkldnn_memory_desc_t* origin = get_mkldnn_memory_desc_t();
+    dnnl_memory_desc_t format_any() const {
+      dnnl_memory_desc_t any;
+      const dnnl_memory_desc_t* origin = get_dnnl_memory_desc_t();
 
-      error::wrap_c_api(mkldnn_memory_desc_init(
+      error::wrap_c_api(dnnl_memory_desc_init(
             &any, origin->ndims, origin->dims, origin->data_type, convert_to_c(format::any)),
           "could not initialize a memory descriptor");
       return any;
@@ -219,8 +219,8 @@ public:
     /// 1. (format_undef, nchw) for all unknown format creation
     /// 2. (format_undef, <internel>) compatible with all public correspondent
     descriptor format_to(format expected) const {
-      mkldnn_memory_desc_t adesc;
-      const mkldnn_memory_desc_t* origin = get_mkldnn_memory_desc_t();
+      dnnl_memory_desc_t adesc;
+      const dnnl_memory_desc_t* origin = get_dnnl_memory_desc_t();
       auto aformat = static_cast<format>(origin->format);
 
       if (public_format_ == format::format_undef) {
@@ -231,15 +231,15 @@ public:
         if (format_compatible_with(expected))
           aformat = expected;
         else
-          throw error(mkldnn_runtime_error, "format_to errors");
+          throw error(dnnl_runtime_error, "format_to errors");
       }
 
-      error::wrap_c_api(mkldnn_memory_desc_init(
+      error::wrap_c_api(dnnl_memory_desc_init(
             &adesc, origin->ndims, origin->dims, origin->data_type, convert_to_c(aformat)),
           "could not initialize a memory descriptor");
 
-      mkldnn_primitive_desc_t result;
-      error::wrap_c_api(mkldnn_memory_primitive_desc_create(
+      dnnl_primitive_desc_t result;
+      error::wrap_c_api(dnnl_memory_primitive_desc_create(
             &result, &adesc, engine::cpu_engine().get()),
           "could not initialize a memory descriptor");
       return descriptor(result, expected);
@@ -287,7 +287,7 @@ public:
     }
 
     bool is_shape_compatible(const dims& next) const {
-      auto origin = get_mkldnn_memory_desc_t();
+      auto origin = get_dnnl_memory_desc_t();
       auto volume_old = std::accumulate(
           origin->dims, &origin->dims[origin->ndims], 1, std::multiplies<int>());
       auto volume_new = std::accumulate(
@@ -297,138 +297,138 @@ public:
 
     descriptor reshape(const dims& adims) {
       if (!is_shape_compatible(adims)) {
-        throw error(mkldnn_runtime_error, "reshape to incompatible shape");
+        throw error(dnnl_runtime_error, "reshape to incompatible shape");
       }
-      const mkldnn_memory_desc_t* origin = get_mkldnn_memory_desc_t();
+      const dnnl_memory_desc_t* origin = get_dnnl_memory_desc_t();
       return descriptor(adims, static_cast<data_type>(origin->data_type));
     }
 
-    /// Returns C API mkldnn_memory_desc_t structure
-    const mkldnn_memory_desc_t* get_mkldnn_memory_desc_t() const {
-      return mkldnn_primitive_desc_query_memory_d(get());
+    /// Returns C API dnnl_memory_desc_t structure
+    const dnnl_memory_desc_t* get_dnnl_memory_desc_t() const {
+      return dnnl_primitive_desc_query_memory_d(get());
     }
 
     inline bool operator ==(const descriptor& other) const {
-      return mkldnn_memory_primitive_desc_equal(get(), other.get());
+      return dnnl_memory_primitive_desc_equal(get(), other.get());
     }
 
     inline bool operator !=(const descriptor& other) const {
       return !operator==(other);
     }
 
-    /// Return format generated by MKL-DNN
+    /// Return format generated by DNNL
     // XXX: format might be out of range.
     format get_internal_format() const {
-      return static_cast<format>(get_mkldnn_memory_desc_t()->format);
+      return static_cast<format>(get_dnnl_memory_desc_t()->format);
     }
 
-    static inline format convert_to_public_format(const mkldnn_memory_format_t mformat) {
+    static inline format convert_to_public_format(const dnnl_memory_format_t mformat) {
       format ret;
       switch(mformat) {
-      case mkldnn_x:
+      case dnnl_x:
         ret = format::x;
         break;
-      case mkldnn_oi:
-      case mkldnn_io:
+      case dnnl_oi:
+      case dnnl_io:
         ret = format::oi;
         break;
-      case mkldnn_nc:
+      case dnnl_nc:
         ret = format::nc;
         break;
-      case mkldnn_ncw:
-      case mkldnn_nwc:
+      case dnnl_ncw:
+      case dnnl_nwc:
         ret = format::ncw;
         break;
-      case mkldnn_nhwc:
+      case dnnl_nhwc:
         ret = format::nhwc;
         break;
-      case mkldnn_nchw:
-      case mkldnn_chwn:
-      case mkldnn_nChw4c:
-      case mkldnn_nChw8c:
-      case mkldnn_nChw16c:
+      case dnnl_nchw:
+      case dnnl_chwn:
+      case dnnl_nChw4c:
+      case dnnl_nChw8c:
+      case dnnl_nChw16c:
         ret = format::nchw;
         break;
-      case mkldnn_ncdhw:
-      case mkldnn_ndhwc:
-      case mkldnn_nCdhw16c:
+      case dnnl_ncdhw:
+      case dnnl_ndhwc:
+      case dnnl_nCdhw16c:
         ret = format::ncdhw;
         break;
-      case mkldnn_oihw:
-      case mkldnn_ihwo:
-      case mkldnn_hwio:
-      case mkldnn_OIhw8i8o:
-      case mkldnn_OIhw16i16o:
-      case mkldnn_OIhw8o8i:
-      case mkldnn_OIhw16o16i:
-      case mkldnn_OIhw8i16o2i:
-      case mkldnn_OIhw8o16i2o:
-      case mkldnn_Oihw8o:
-      case mkldnn_Oihw16o:
-      case mkldnn_Ohwi8o:
-      case mkldnn_Ohwi16o:
-      case mkldnn_OhIw16o4i:
-      case mkldnn_OIhw4i16o4i:
-      case mkldnn_IOhw16o16i:
-      case mkldnn_OIhw4i16o4i_s8s8:
+      case dnnl_oihw:
+      case dnnl_ihwo:
+      case dnnl_hwio:
+      case dnnl_OIhw8i8o:
+      case dnnl_OIhw16i16o:
+      case dnnl_OIhw8o8i:
+      case dnnl_OIhw16o16i:
+      case dnnl_OIhw8i16o2i:
+      case dnnl_OIhw8o16i2o:
+      case dnnl_Oihw8o:
+      case dnnl_Oihw16o:
+      case dnnl_Ohwi8o:
+      case dnnl_Ohwi16o:
+      case dnnl_OhIw16o4i:
+      case dnnl_OIhw4i16o4i:
+      case dnnl_IOhw16o16i:
+      case dnnl_OIhw4i16o4i_s8s8:
         ret = format::oihw;
         break;
-      case mkldnn_oidhw:
-      case mkldnn_dhwio:
+      case dnnl_oidhw:
+      case dnnl_dhwio:
         ret = format::oidhw;
         break;
-      case mkldnn_goihw:
-      case mkldnn_hwigo:
-      case mkldnn_gOIhw8i8o:
-      case mkldnn_gOIhw16i16o:
-      case mkldnn_gOIhw4i16o4i:
-      case mkldnn_gOIhw8i16o2i:
-      case mkldnn_gOIhw8o16i2o:
-      case mkldnn_gOIhw8o8i:
-      case mkldnn_gOIhw16o16i:
-      case mkldnn_gIOhw16o16i:
-      case mkldnn_gOihw8o:
-      case mkldnn_gOihw16o:
-      case mkldnn_gOhwi8o:
-      case mkldnn_gOhwi16o:
-      case mkldnn_Goihw8g:
-      case mkldnn_Goihw16g:
-      case mkldnn_Goihw16g_s8s8:
-      case mkldnn_gOhIw16o4i:
-      case mkldnn_gOIhw2i8o4i:
-      case mkldnn_gOIhw2i8o4i_s8s8:
-      case mkldnn_gOIhw4o4i:
-      case mkldnn_gOIhw4o4i_s8s8:
-      case mkldnn_gOIhw4i4o:
+      case dnnl_goihw:
+      case dnnl_hwigo:
+      case dnnl_gOIhw8i8o:
+      case dnnl_gOIhw16i16o:
+      case dnnl_gOIhw4i16o4i:
+      case dnnl_gOIhw8i16o2i:
+      case dnnl_gOIhw8o16i2o:
+      case dnnl_gOIhw8o8i:
+      case dnnl_gOIhw16o16i:
+      case dnnl_gIOhw16o16i:
+      case dnnl_gOihw8o:
+      case dnnl_gOihw16o:
+      case dnnl_gOhwi8o:
+      case dnnl_gOhwi16o:
+      case dnnl_Goihw8g:
+      case dnnl_Goihw16g:
+      case dnnl_Goihw16g_s8s8:
+      case dnnl_gOhIw16o4i:
+      case dnnl_gOIhw2i8o4i:
+      case dnnl_gOIhw2i8o4i_s8s8:
+      case dnnl_gOIhw4o4i:
+      case dnnl_gOIhw4o4i_s8s8:
+      case dnnl_gOIhw4i4o:
         ret = format::goihw;
         break;
-      case mkldnn_ntc:
-      case mkldnn_tnc:
+      case dnnl_ntc:
+      case dnnl_tnc:
         ret = format::tnc;
         break;
-      case mkldnn_ldigo:
+      case dnnl_ldigo:
         ret = format::ldigo;
         break;
-      case mkldnn_ldgoi:
+      case dnnl_ldgoi:
         ret = format::ldgoi;
         break;
-      case mkldnn_ldgo:
+      case dnnl_ldgo:
         ret = format::ldgo;
         break;
-      case mkldnn_ldsnc:
+      case dnnl_ldsnc:
         ret = format::ldsnc;
         break;
-      case mkldnn_rnn_packed:
+      case dnnl_rnn_packed:
         ret = format::rnn_packed;
         break;
-      case mkldnn_blocked:
-      case mkldnn_wino_fmt:
-      case mkldnn_format_undef:
+      case dnnl_blocked:
+      case dnnl_wino_fmt:
+      case dnnl_format_undef:
         ret = format::format_undef;
         break;
       default:
-        // std::cout<<"Unsupported MKL-DNN memory format: "<<mformat<<std::endl;
-        throw error(mkldnn_runtime_error, "unsupported mkldnn memory format!");
+        // std::cout<<"Unsupported DNNL memory format: "<<mformat<<std::endl;
+        throw error(dnnl_runtime_error, "unsupported dnnl memory format!");
       }
       return ret;
     }
@@ -436,7 +436,7 @@ public:
     // oi, nc, oihw, nchw
     // TODO: other public compatible format, eg. iohw, nhwc.
     static inline format public_compatible_format(const descriptor& desc) {
-      return convert_to_public_format(desc.get_mkldnn_memory_desc_t()->format);
+      return convert_to_public_format(desc.get_dnnl_memory_desc_t()->format);
     }
 
   private:
@@ -514,31 +514,31 @@ public:
   };
 
   /// View is for describing a subregion from a param
-  struct view : public c_wrapper<mkldnn_primitive_desc_t> {
+  struct view : public c_wrapper<dnnl_primitive_desc_t> {
     /// Create view by specifying starting coordinate and size of each dimension
     view (const descriptor& host, const dims& volume, const dims& start) {
-      mkldnn_primitive_desc_t result;
-      error::wrap_c_api(mkldnn_view_primitive_desc_create(
+      dnnl_primitive_desc_t result;
+      error::wrap_c_api(dnnl_view_primitive_desc_create(
             &result, host.get(), &volume[0], &start[0]),
           "could not create a view primitive descriptor");
 
-      auto desc_closer = [] (mkldnn_primitive_desc_t res) {
-        mkldnn_primitive_desc_destroy(res);
+      auto desc_closer = [] (dnnl_primitive_desc_t res) {
+        dnnl_primitive_desc_destroy(res);
       };
 
-      std::unique_ptr<std::remove_pointer<mkldnn_primitive_desc_t>::type, decltype(desc_closer)>
+      std::unique_ptr<std::remove_pointer<dnnl_primitive_desc_t>::type, decltype(desc_closer)>
         guard(result, desc_closer);
 
-      mkldnn_primitive_desc_t cdesc;
-      const_mkldnn_primitive_desc_t const_cdesc = mkldnn_primitive_desc_query_pd(
-          result, mkldnn::convert_to_c(query::dst_pd), 0);
-      error::wrap_c_api(mkldnn_primitive_desc_clone(&cdesc, const_cdesc),
+      dnnl_primitive_desc_t cdesc;
+      const_dnnl_primitive_desc_t const_cdesc = dnnl_primitive_desc_query_pd(
+          result, dnnl::convert_to_c(query::dst_pd), 0);
+      error::wrap_c_api(dnnl_primitive_desc_clone(&cdesc, const_cdesc),
           "could not clone a src primititve descriptor");
       reset(cdesc);
     }
 
     descriptor expected_dst_descriptor() const {
-      auto internal = mkldnn_primitive_desc_query_memory_d(get());
+      auto internal = dnnl_primitive_desc_query_memory_d(get());
       dims adims (internal->dims, &internal->dims[internal->ndims]);
       data_type adata_type = static_cast<data_type>(internal->data_type);
       // Care about 3D senario
@@ -550,8 +550,8 @@ public:
   /// The template initialize param with a descriptor.
   template<class alloc = utils::allocator>
   void init(const descriptor& adesc) {
-    mkldnn_primitive_t result;
-    error::wrap_c_api(mkldnn_primitive_create(&result, adesc.get(), nullptr, nullptr),
+    dnnl_primitive_t result;
+    error::wrap_c_api(dnnl_primitive_create(&result, adesc.get(), nullptr, nullptr),
         "could not create a memory primitive");
 
     reset(result);
@@ -564,8 +564,8 @@ public:
 
   /// The template initialize param with a descriptor. Specifiy extra buffer.
   void init(const descriptor& adesc, void* ahandle) {
-    mkldnn_primitive_t result;
-    error::wrap_c_api(mkldnn_primitive_create(&result, adesc.get(), nullptr, nullptr),
+    dnnl_primitive_t result;
+    error::wrap_c_api(dnnl_primitive_create(&result, adesc.get(), nullptr, nullptr),
         "could not create a memory primitive");
 
     reset(result);
@@ -666,28 +666,28 @@ public:
   }
 
   /// Returns pointer to structure of primitive descriptor.
-  const_mkldnn_primitive_desc_t get_mkldnn_primitive_desc_t() const {
-    const_mkldnn_primitive_desc_t cdesc;
-    error::wrap_c_api(mkldnn_primitive_get_primitive_desc(get(), &cdesc),
+  const_dnnl_primitive_desc_t get_dnnl_primitive_desc_t() const {
+    const_dnnl_primitive_desc_t cdesc;
+    error::wrap_c_api(dnnl_primitive_get_primitive_desc(get(), &cdesc),
             "could not get primitive descriptor from a memory primitive");
     return cdesc;
   }
 
   /// Return pointer to memory descriptor structure
-  const mkldnn_memory_desc_t* get_mkldnn_memory_desc_t() const {
-    const_mkldnn_primitive_desc_t cdesc;
-    error::wrap_c_api(mkldnn_primitive_get_primitive_desc(get(), &cdesc),
+  const dnnl_memory_desc_t* get_dnnl_memory_desc_t() const {
+    const_dnnl_primitive_desc_t cdesc;
+    error::wrap_c_api(dnnl_primitive_get_primitive_desc(get(), &cdesc),
         "could not get primitive descriptor from a param");
-    return mkldnn_primitive_desc_query_memory_d(cdesc);
+    return dnnl_primitive_desc_query_memory_d(cdesc);
   }
 
   descriptor get_descriptor() const {
-    return descriptor(get_mkldnn_primitive_desc_t(), public_format_);
+    return descriptor(get_dnnl_primitive_desc_t(), public_format_);
   }
 
   descriptor dup_descriptor() const {
-    mkldnn_primitive_desc_t clone;
-    error::wrap_c_api(mkldnn_primitive_desc_clone(&clone, get_mkldnn_primitive_desc_t()),
+    dnnl_primitive_desc_t clone;
+    error::wrap_c_api(dnnl_primitive_desc_clone(&clone, get_dnnl_primitive_desc_t()),
         "could not clone a primitive descriptor");
     return descriptor(clone, public_format_);
   }
@@ -713,20 +713,20 @@ public:
 
   /// Reture param's data type
   inline data_type get_data_type() const {
-    const mkldnn_memory_desc_t* adesc = get_mkldnn_memory_desc_t();
+    const dnnl_memory_desc_t* adesc = get_dnnl_memory_desc_t();
     return static_cast<data_type>(adesc->data_type);
   }
 
   /// Return size of specified dimension
   inline dim_t get_dim(int index) const {
     if (index < 0 || index >= ndims()) return static_cast<dim_t>(0);
-    const mkldnn_memory_desc_t* mdesc = get_mkldnn_memory_desc_t();
+    const dnnl_memory_desc_t* mdesc = get_dnnl_memory_desc_t();
     return mdesc->dims[index];
   }
 
   /// Return dimensions' size vector
   inline dims get_dims() const {
-    const mkldnn_memory_desc_t* mdesc = get_mkldnn_memory_desc_t();
+    const dnnl_memory_desc_t* mdesc = get_dnnl_memory_desc_t();
     return dims (mdesc->dims, &mdesc->dims[mdesc->ndims]);
   }
 
@@ -743,17 +743,17 @@ public:
 
   /// Return number of dimensions
   inline int ndims() const {
-    return get_mkldnn_memory_desc_t()->ndims;
+    return get_dnnl_memory_desc_t()->ndims;
   }
 
   inline dims get_block_dims() const {
-    const mkldnn_memory_desc_t* mdesc = get_mkldnn_memory_desc_t();
+    const dnnl_memory_desc_t* mdesc = get_dnnl_memory_desc_t();
     const auto block_dims = mdesc->layout_desc.blocking.block_dims;
     return dims (block_dims, &block_dims[mdesc->ndims]);
   }
 
   inline dims get_block_stride() const {
-    const mkldnn_memory_desc_t* mdesc = get_mkldnn_memory_desc_t();
+    const dnnl_memory_desc_t* mdesc = get_dnnl_memory_desc_t();
     const auto block_stride = mdesc->layout_desc.blocking.strides[0];
     return dims (block_stride, &block_stride[mdesc->ndims]);
   }
@@ -765,14 +765,14 @@ public:
 
   /// Return buffer size required by the param
   inline size_t get_size() const {
-    return mkldnn_memory_primitive_desc_get_size(get_mkldnn_primitive_desc_t());
+    return dnnl_memory_primitive_desc_get_size(get_dnnl_primitive_desc_t());
   }
 
   /// Return element number of the param.
   /// The number is the meaning values for a tensor, instead of whole buffer.
   /// It is the number without counting in paddings.
   inline dim_t get_nelems() const {
-    const mkldnn_memory_desc_t* mdesc = get_mkldnn_memory_desc_t();
+    const dnnl_memory_desc_t* mdesc = get_dnnl_memory_desc_t();
     return std::accumulate(mdesc->dims, &mdesc->dims[mdesc->ndims], 1, std::multiplies<dim_t>());
   }
 
@@ -780,14 +780,14 @@ public:
   /// the CPU engine, this is a pointer to the allocated memory.
   inline void* get_data_handle() const {
     void* handle;
-    error::wrap_c_api(mkldnn_memory_get_data_handle(get(), &handle), "could not get native handle");
+    error::wrap_c_api(dnnl_memory_get_data_handle(get(), &handle), "could not get native handle");
     return handle;
   }
 
   /// Set new buffer handle into param
   inline void set_data_handle(void* handle) {
     if (buffer_.get() != handle && buffer_ != nullptr) buffer_.reset();
-    error::wrap_c_api(mkldnn_memory_set_data_handle(get(), handle), "could not set native handle");
+    error::wrap_c_api(dnnl_memory_set_data_handle(get(), handle), "could not set native handle");
   }
 
   /// Return the scale of this param.
@@ -830,16 +830,16 @@ public:
   }
 
   // Must go away or be private:
-  static mkldnn_data_type_t convert_to_c(data_type adata_type) {
-      return static_cast<mkldnn_data_type_t>(adata_type);
+  static dnnl_data_type_t convert_to_c(data_type adata_type) {
+      return static_cast<dnnl_data_type_t>(adata_type);
   }
-  static mkldnn_memory_format_t convert_to_c(format aformat) {
-      return static_cast<mkldnn_memory_format_t>(aformat);
+  static dnnl_memory_format_t convert_to_c(format aformat) {
+      return static_cast<dnnl_memory_format_t>(aformat);
   }
 
   /// Return internal format of the param
   inline format get_internal_format() const {
-    return static_cast<format>(get_mkldnn_memory_desc_t()->format);
+    return static_cast<format>(get_dnnl_memory_desc_t()->format);
   }
 
   inline format get_public_format() const {
@@ -850,7 +850,7 @@ public:
     return public_format_ = aformat;
   }
 
-  /// Need reorder if current param used by non MKL-DNN routines.
+  /// Need reorder if current param used by non DNNL routines.
   inline bool need_reorder() const {
     return (!is_public_format() || get_data_type() != data_type::f32);
   }
@@ -864,7 +864,7 @@ public:
   }
 
   bool is_shape_compatible(const dims& next) const {
-    const mkldnn_memory_desc_t* adesc = mkldnn_primitive_desc_query_memory_d(get_descriptor().get());
+    const dnnl_memory_desc_t* adesc = dnnl_primitive_desc_query_memory_d(get_descriptor().get());
     auto origin = adesc->dims;
     auto volume_old = std::accumulate(origin, &origin[adesc->ndims], 1, std::multiplies<int>());
     auto volume_new = std::accumulate(next.begin(), next.end(), 1, std::multiplies<dims::value_type>());
@@ -875,14 +875,14 @@ public:
 
   inline bool is_public_format() const {
     auto desc = get_descriptor();
-    return desc.get_mkldnn_memory_desc_t()->format == convert_to_c(descriptor::public_compatible_format(desc));
+    return desc.get_dnnl_memory_desc_t()->format == convert_to_c(descriptor::public_compatible_format(desc));
   }
 
   inline bool is_weights() const {
     auto fmt = convert_to_c(get_internal_format());
-    return (fmt >= mkldnn_oi && fmt < mkldnn_ntc)
-      || (fmt > mkldnn_ldsnc && fmt < mkldnn_nCw8c)
-      || fmt > mkldnn_nCdhw16c;
+    return (fmt >= dnnl_oi && fmt < dnnl_ntc)
+      || (fmt > dnnl_ldsnc && fmt < dnnl_nCw8c)
+      || fmt > dnnl_nCdhw16c;
   }
 
   inline bool is_grouped() const {
@@ -941,10 +941,10 @@ public:
   struct reorder: public primitive_group,
       public utils::computation_cache<reorder> {
     struct reorder_desc : public descriptor_group {
-      reorder_desc(const c_wrapper<mkldnn_primitive_desc_t>& input,
-          const c_wrapper<mkldnn_primitive_desc_t>& output, const attr_t& attr = attr_t()) {
-        mkldnn_primitive_desc_t result;
-        error::wrap_c_api(mkldnn_reorder_primitive_desc_create_v2(
+      reorder_desc(const c_wrapper<dnnl_primitive_desc_t>& input,
+          const c_wrapper<dnnl_primitive_desc_t>& output, const attr_t& attr = attr_t()) {
+        dnnl_primitive_desc_t result;
+        error::wrap_c_api(dnnl_reorder_primitive_desc_create_v2(
               &result, input.get(), output.get(), attr.get()),
             "could not create a reorder primitive reorder descriptor");
         reset(result);
@@ -958,8 +958,8 @@ public:
       in_.init(src_desc, nullptr);
       out_.init(dst_desc, nullptr);
 
-      mkldnn_primitive_at_t inputs[] = { {in_.get(), 0} };
-      const_mkldnn_primitive_t outputs[] = { out_.get() };
+      dnnl_primitive_at_t inputs[] = { {in_.get(), 0} };
+      const_dnnl_primitive_t outputs[] = { out_.get() };
       create_primitive(desc, inputs, outputs);
     }
 
@@ -1142,7 +1142,7 @@ public:
   /// the CPU engine, this is a pointer to the allocated memory.
   inline void* get_data_handle() const {
     void* handle;
-    error::wrap_c_api(mkldnn_memory_get_data_handle(get(), &handle), "could not get native handle");
+    error::wrap_c_api(dnnl_memory_get_data_handle(get(), &handle), "could not get native handle");
     return handle;
   }
 
@@ -1150,7 +1150,7 @@ public:
   template<class alloc = utils::allocator>
   tensor& reshape(const dims& new_dims) {
     if (!get_descriptor().is_shape_compatible(new_dims)) {
-      throw error(mkldnn_runtime_error, "reshape to incompatible shape");
+      throw error(dnnl_runtime_error, "reshape to incompatible shape");
     } else if (new_dims != get_dims()) {
       if (!is_public_format()) {
         tensor p;
@@ -1271,7 +1271,7 @@ public:
       ? engine::default_format(ndims()) : public_format_;
 
     dims iohw_dims;
-    // TODO:it will be remove when deconvolution in mkl-dnn support iohw format.
+    // TODO:it will be remove when deconvolution in dnnl support iohw format.
     if (public_format_ == format::iohw) {
       iohw_dims = get_public_format_dims();
       if (array == nullptr)
@@ -1301,7 +1301,7 @@ public:
       }
     }
 
-    // TODO:it will be remove when deconvolution in mkl-dnn support iohw format.
+    // TODO:it will be remove when deconvolution in dnnl support iohw format.
     if (!iohw_dims.empty()) {
       ret.set_descriptor({iohw_dims, dst_dtype, dst_format});
     }
@@ -1317,14 +1317,14 @@ public:
 
   bool is_nchw_channel_blocking() const {
     auto aformat = get_internal_format();
-    return aformat == static_cast<format>(mkldnn_nchw)
-      || aformat == static_cast<format>(mkldnn_nChw8c)
-      || aformat == static_cast<format>(mkldnn_nChw16c);
+    return aformat == static_cast<format>(dnnl_nchw)
+      || aformat == static_cast<format>(dnnl_nChw8c)
+      || aformat == static_cast<format>(dnnl_nChw16c);
   }
 
   bool is_nhwc_format() const {
     auto aformat = get_internal_format();
-    return aformat == static_cast<format>(mkldnn_nhwc);
+    return aformat == static_cast<format>(dnnl_nhwc);
   }
 
   bool is_iohw_public_layout() const {
@@ -1332,7 +1332,7 @@ public:
   }
 
   bool is_limited_blockable() {
-    auto& blocking = get_mkldnn_memory_desc_t()->layout_desc.blocking.block_dims;
+    auto& blocking = get_dnnl_memory_desc_t()->layout_desc.blocking.block_dims;
     for (auto i = 0; i < ndims(); i++) {
       if (get_dim(i) < blocking[i]) continue;
       if (get_dim(i) % blocking[i] == 0) continue;
@@ -1341,13 +1341,13 @@ public:
     return true;
   }
 
-  // TODO:it will be remove when deconvolution in mkl-dnn support iohw format.
+  // TODO:it will be remove when deconvolution in dnnl support iohw format.
   static void iohw_definedby_blocked(tensor& atensor) {
     IDEEP_ENFORCE(atensor.ndims() == 4, "Only support 4 dims tensor");
     dims oihw_dims {atensor.get_dim(1), atensor.get_dim(0), atensor.get_dim(2), atensor.get_dim(3)};
     descriptor desc(oihw_dims, atensor.get_data_type(), format::oihw);
 
-    auto oi_primitive_desc = desc.get_mkldnn_memory_desc_t();
+    auto oi_primitive_desc = desc.get_dnnl_memory_desc_t();
     auto oi_blk = oi_primitive_desc->layout_desc.blocking;
     oi_blk.strides[0][0] = oi_blk.strides[0][1];
     oi_blk.strides[0][1] = oi_blk.strides[0][0] * oi_blk.padding_dims[0];

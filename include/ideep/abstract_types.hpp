@@ -6,8 +6,8 @@
 #include <map>
 #include <vector>
 #include <cstdlib>
-#include <mkldnn.h>
-#include <mkldnn.hpp>
+#include <dnnl.h>
+#include <dnnl.hpp>
 
 namespace ideep {
 
@@ -23,7 +23,7 @@ namespace ideep {
 #define IDEEP_ENFORCE(condition, message) \
   do {  \
     error::wrap_c_api((condition) \
-        ? mkldnn_success : mkldnn_invalid_arguments, (message));  \
+        ? dnnl_success : dnnl_invalid_arguments, (message));  \
   } while(false)
 #else
 #define IDEEP_ENFORCE(condition, message)
@@ -43,14 +43,14 @@ namespace ideep {
 #define IDEEP_IS_ALIGNED_PTR(ptr, bytes) ((IDEEP_MOD_PTR(ptr, bytes)) == 0)
 
 struct error: public std::exception {
-    mkldnn_status_t status;
+    dnnl_status_t status;
     const char* message;
 
-    error(mkldnn_status_t astatus, const char* amessage)
+    error(dnnl_status_t astatus, const char* amessage)
         : status(astatus), message(amessage) {}
 
-    static void wrap_c_api(mkldnn_status_t status, const char* message) {
-      if (status != mkldnn_success) {
+    static void wrap_c_api(dnnl_status_t status, const char* message) {
+      if (status != dnnl_success) {
         throw error(status, message);
       }
     }
@@ -58,7 +58,7 @@ struct error: public std::exception {
 
 /// Same class for resource management, except public default constructor
 /// Movable support for better performance
-template <typename T, typename traits = mkldnn::handle_traits<T>>
+template <typename T, typename traits = dnnl::handle_traits<T>>
 class c_wrapper :
   public std::shared_ptr<typename std::remove_pointer<T>::type> {
   using super = std::shared_ptr<typename std::remove_pointer<T>::type>;
@@ -79,14 +79,14 @@ public:
 using key_t = std::string;
 using scale_t = std::vector<float>;
 
-using query = mkldnn::query;
-using kind = mkldnn::primitive::kind;
-using prop_kind = mkldnn::prop_kind;
-using algorithm = mkldnn::algorithm;
-using padding_kind = mkldnn::padding_kind;
-using batch_normalization_flag = mkldnn::batch_normalization_flag;
-using query = mkldnn::query;
-using round_mode = mkldnn::round_mode;
+using query = dnnl::query;
+using kind = dnnl::primitive::kind;
+using prop_kind = dnnl::prop_kind;
+using algorithm = dnnl::algorithm;
+using padding_kind = dnnl::padding_kind;
+using batch_normalization_flag = dnnl::batch_normalization_flag;
+using query = dnnl::query;
+using round_mode = dnnl::round_mode;
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
 #define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
@@ -97,11 +97,11 @@ const scale_t IDEEP_DEF_SCALE {1.0f};
 constexpr int IDEEP_U8_MAX = 0xFF;
 constexpr int IDEEP_S8_MAX = 0x7F;
 constexpr int IDEEP_S32_MAX = 0x7FFFFFFF;
-const std::map<mkldnn::memory::data_type, int> dt_max_map
+const std::map<dnnl::memory::data_type, int> dt_max_map
 {
-  {mkldnn::memory::data_type::s32, IDEEP_S32_MAX},
-  {mkldnn::memory::data_type::s8, IDEEP_S8_MAX},
-  {mkldnn::memory::data_type::u8, IDEEP_U8_MAX}
+  {dnnl::memory::data_type::s32, IDEEP_S32_MAX},
+  {dnnl::memory::data_type::s8, IDEEP_S8_MAX},
+  {dnnl::memory::data_type::u8, IDEEP_U8_MAX}
 };
 
 enum lowp_kind {
@@ -118,43 +118,43 @@ enum rnn_kind {
 
 /// hide other formats
 enum format {
-  format_undef = mkldnn_format_undef,
-  any = mkldnn_any,
-  blocked = mkldnn_blocked,
-  x = mkldnn_x,
-  nc = mkldnn_nc,
-  io = mkldnn_io,
-  oi = mkldnn_oi,
-  ncw = mkldnn_ncw,
-  nwc = mkldnn_nwc,
-  oiw = mkldnn_oiw,
-  wio = mkldnn_wio,
-  nchw = mkldnn_nchw,
-  nhwc = mkldnn_nhwc,
-  chwn = mkldnn_chwn,
-  ncdhw = mkldnn_ncdhw,
-  ndhwc = mkldnn_ndhwc,
-  oihw = mkldnn_oihw,
-  ihwo = mkldnn_ihwo,
-  hwio = mkldnn_hwio,
-  oidhw = mkldnn_oidhw,
-  dhwio = mkldnn_dhwio,
-  goihw = mkldnn_goihw,
-  hwigo = mkldnn_hwigo,
-  ntc = mkldnn_ntc,
-  tnc = mkldnn_tnc,
-  ldigo = mkldnn_ldigo,
-  ldgoi = mkldnn_ldgoi,
-  ldgo = mkldnn_ldgo,
-  ldsnc = mkldnn_ldsnc,
-  rnn_packed = mkldnn_rnn_packed,
-  iohw = mkldnn_format_last + 1,
+  format_undef = dnnl_format_undef,
+  any = dnnl_any,
+  blocked = dnnl_blocked,
+  x = dnnl_x,
+  nc = dnnl_nc,
+  io = dnnl_io,
+  oi = dnnl_oi,
+  ncw = dnnl_ncw,
+  nwc = dnnl_nwc,
+  oiw = dnnl_oiw,
+  wio = dnnl_wio,
+  nchw = dnnl_nchw,
+  nhwc = dnnl_nhwc,
+  chwn = dnnl_chwn,
+  ncdhw = dnnl_ncdhw,
+  ndhwc = dnnl_ndhwc,
+  oihw = dnnl_oihw,
+  ihwo = dnnl_ihwo,
+  hwio = dnnl_hwio,
+  oidhw = dnnl_oidhw,
+  dhwio = dnnl_dhwio,
+  goihw = dnnl_goihw,
+  hwigo = dnnl_hwigo,
+  ntc = dnnl_ntc,
+  tnc = dnnl_tnc,
+  ldigo = dnnl_ldigo,
+  ldgoi = dnnl_ldgoi,
+  ldgo = dnnl_ldgo,
+  ldsnc = dnnl_ldsnc,
+  rnn_packed = dnnl_rnn_packed,
+  iohw = dnnl_format_last + 1,
   format_last = iohw + 1
 };
 
 /// cpu execution engine only.
-struct engine: public mkldnn::engine {
-  explicit engine(const mkldnn_engine_t& aengine) = delete;
+struct engine: public dnnl::engine {
+  explicit engine(const dnnl_engine_t& aengine) = delete;
   engine(engine const&) = delete;
   void operator =(engine const&) = delete;
 
@@ -180,15 +180,15 @@ struct engine: public mkldnn::engine {
 
 private:
   engine(kind akind = kind::cpu)
-    :mkldnn::engine(akind, 0) {
+    :dnnl::engine(akind, 0) {
   }
 };
 
 /// A default stream
-struct stream: public mkldnn::stream {
-  using mkldnn::stream::stream;
+struct stream: public dnnl::stream {
+  using dnnl::stream::stream;
   static stream default_stream() {
-    return stream(mkldnn::stream::kind::eager);
+    return stream(dnnl::stream::kind::eager);
   }
 };
 

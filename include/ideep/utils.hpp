@@ -16,8 +16,8 @@
 #include <mkl_vsl.h>
 #include <mkl_vml_functions.h>
 #endif
-#include <mkldnn.h>
-#include <mkldnn.hpp>
+#include <dnnl.h>
+#include <dnnl.hpp>
 #ifdef _OPENMP
 #include <omp.h>
 #else
@@ -208,7 +208,7 @@ static void bernoulli_generate(const long n, const double p, int* r) {
 #endif
 }
 
-static inline mkldnn::memory::dims get_compatible_dilates(const mkldnn::memory::dims& dilates) {
+static inline dnnl::memory::dims get_compatible_dilates(const dnnl::memory::dims& dilates) {
     if (!dilates.empty() && !IDEEP_STD_ANY_LE(dilates, 0)) {
       auto dilates_in = dilates;
       IDEEP_STD_EACH_SUB(dilates_in, 1);
@@ -220,10 +220,10 @@ static inline mkldnn::memory::dims get_compatible_dilates(const mkldnn::memory::
 static void inline validate_dims() {}
 
 template<typename... Ts>
-static void inline validate_dims(const mkldnn::memory::dims& dims, Ts&... rest) {
+static void inline validate_dims(const dnnl::memory::dims& dims, Ts&... rest) {
 #ifndef NDEBUG
   if (dims.size() > TENSOR_MAX_DIMS) {
-    error::wrap_c_api(mkldnn_invalid_arguments, "Invalid dimesions");
+    error::wrap_c_api(dnnl_invalid_arguments, "Invalid dimesions");
   }
   validate_dims(rest...);
 #endif
@@ -336,25 +336,25 @@ inline void fast_memset(T* data_o, T val, size_t len)
     return;
 }
 
-inline mkldnn::algorithm rnn_kind_to_algorithm(rnn_kind rnn) {
+inline dnnl::algorithm rnn_kind_to_algorithm(rnn_kind rnn) {
   if (rnn == RNN_RELU || rnn == RNN_TANH) {
-    return mkldnn::algorithm::vanilla_rnn;
+    return dnnl::algorithm::vanilla_rnn;
   } else if (rnn == LSTM) {
-    return mkldnn::algorithm::vanilla_lstm;
+    return dnnl::algorithm::vanilla_lstm;
   } else if (rnn == GRU) {
-    return mkldnn::algorithm::gru_linear_before_reset;
+    return dnnl::algorithm::gru_linear_before_reset;
   } else {
-    return mkldnn::algorithm::algorithm_undef;
+    return dnnl::algorithm::algorithm_undef;
   }
 }
 
-inline mkldnn::algorithm rnn_kind_to_activation(rnn_kind rnn) {
+inline dnnl::algorithm rnn_kind_to_activation(rnn_kind rnn) {
   if (rnn == RNN_RELU) {
-    return mkldnn::algorithm::eltwise_relu;
+    return dnnl::algorithm::eltwise_relu;
   } else if (rnn == RNN_TANH || rnn == LSTM || rnn == GRU) {
-    return mkldnn::algorithm::eltwise_tanh;
+    return dnnl::algorithm::eltwise_tanh;
   } else {
-    return mkldnn::algorithm::algorithm_undef;
+    return dnnl::algorithm::algorithm_undef;
   }
 }
 

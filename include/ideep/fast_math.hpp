@@ -184,10 +184,10 @@ public:
         };
         vecwise_unary_op(dst, src, nelems, vec_inv_square, mask_vec_inv_square);
       } else {
-        throw error(mkldnn_unimplemented, "Not implemented!");
+        throw error(dnnl_unimplemented, "Not implemented!");
       }
     } else {
-      throw error(mkldnn_unimplemented, "Not implemented!");
+      throw error(dnnl_unimplemented, "Not implemented!");
     }
   }
 
@@ -219,10 +219,10 @@ public:
           maskstore_ps(dst, mask, vmm1);
         }
       } else {
-        throw error(mkldnn_unimplemented, "Not implemented!");
+        throw error(dnnl_unimplemented, "Not implemented!");
       }
     } else {
-      throw error(mkldnn_unimplemented, "Not implemented!");
+      throw error(dnnl_unimplemented, "Not implemented!");
     }
   }
 
@@ -265,7 +265,7 @@ public:
       };
       vecwise_binary_op(dst, src1, src2, nelems, op, op);
     } else {
-      throw error(mkldnn_unimplemented, "Not implemented!");
+      throw error(dnnl_unimplemented, "Not implemented!");
     }
   }
 
@@ -278,7 +278,7 @@ public:
       };
       vecwise_binary_op(dst, src1, src2, nelems, op, op);
       } else {
-        throw error(mkldnn_unimplemented, "Not implemented!");
+        throw error(dnnl_unimplemented, "Not implemented!");
       }
   }
 
