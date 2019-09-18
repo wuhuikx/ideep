@@ -2133,7 +2133,8 @@ struct inner_product_forward: public computation,
       mkldnn_memory_desc_t weights_data;
       auto src_data = src_desc.format_any();
       if (weights_desc.get_data_type() == tdtype_t::s8 ||
-          weights_desc.get_data_type() == tdtype_t::u8)
+          weights_desc.get_data_type() == tdtype_t::u8 ||
+          weights_desc.get_data_type() == tdtype_t::bf16)
         weights_data = weights_desc.format_any();
       else
         weights_data = *weights_desc.get_mkldnn_memory_desc_t();
