@@ -370,6 +370,7 @@ public:
       case mkldnn_OhIw16o4i:
       case mkldnn_OIhw4i16o4i:
       case mkldnn_IOhw16o16i:
+      case mkldnn_IOhw8o16i2o:
       case mkldnn_OIhw4i16o4i_s8s8:
         ret = format::oihw;
         break;
@@ -1266,7 +1267,7 @@ public:
   template<class alloc = utils::allocator>
   inline tensor to_public(void* array = nullptr, bool scale_out = true) const {
     tensor ret;
-    auto dst_dtype = scale_out ? data_type::f32 : get_data_type();
+    auto dst_dtype = scale_out && (get_data_type() != data_type::bf16) ? data_type::f32 : get_data_type();
     auto dst_format = ((public_format_ == format::format_undef) || (public_format_ == format::iohw))
       ? engine::default_format(ndims()) : public_format_;
 

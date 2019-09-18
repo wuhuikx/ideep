@@ -281,13 +281,16 @@ public:
     std::vector<tdesc_t> inputs_desc;
     for (auto in : inputs) {
       auto _in = in;
-      if (in.get_data_type() != tdtype_t::f32) {
+      if (in.get_data_type() != tdtype_t::f32 && in.get_data_type() != tdtype_t::bf16) {
         _in.init<alloc>({in.get_dims(), tdtype_t::f32});
         IDEEP_ENFORCE(in.has_scale(), "Can not find scales");
         IDEEP_ENFORCE(in.get_scale().size() == 1, "Incorrect scale size");
         auto scale = IDEEP_DEF_SCALE;
         scale[0] /= in.get_scale()[0];
         treorder_t::compute(in, _in, {0, scale});
+      } else if (in.get_internal_format() != inputs[0].get_internal_format()) {
+        _in.init<alloc>(inputs[0].get_descriptor());
+        treorder_t::compute(in, _in);
       }
       inputs_in.push_back(_in);
       inputs_desc.push_back(_in.get_descriptor());
@@ -359,6 +362,7 @@ struct convolution_forward: public computation,
   template <class alloc, bool with_bias>
   static void compute_impl(convolution_forward& comp, const tensor& src,
       const tensor& weights, const tensor& bias, tensor& dst) {
+
     auto src_in = comp.transform_input_cache<alloc>(0, src);
     auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights());
 
@@ -452,7 +456,6 @@ struct convolution_forward: public computation,
     } else {
       op_attr = attr;
 
-      src_desc = {src.get_dims(), tdtype_t::f32};
       if (src.has_scale()) {
         auto src_scale = src.get_scale();
         src_scale[0] = 1.0f / src_scale[0];
@@ -460,10 +463,20 @@ struct convolution_forward: public computation,
       }
 
       weights_desc = weights.get_descriptor();
-      IDEEP_ENFORCE(weights.get_data_type() == tdtype_t::f32, "Incorrect data type in weights");
+      if (src.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
+        dst_data_type = tdtype_t::bf16;
+        src_desc = {src.get_dims(), tdtype_t::bf16};
+        weights_desc = {weights.get_dims(), tdtype_t::bf16};
+      } else {
+        src_desc = {src.get_dims(), tdtype_t::f32};
+      }
+
+      IDEEP_ENFORCE(weights.get_data_type() == tdtype_t::f32 || weights.get_data_type() == tdtype_t::bf16,
+                    "Incorrect data type in weights");
 
       if (with_bias) {
-        IDEEP_ENFORCE(bias.get_data_type() == tdtype_t::f32, "Incorrect data type in bias");
+        IDEEP_ENFORCE(bias.get_data_type() == tdtype_t::f32 || bias.get_data_type() == tdtype_t::bf16,
+                      "Incorrect data type in bias");
         bias_desc = bias.get_descriptor();
       }
     }
@@ -472,7 +485,7 @@ struct convolution_forward: public computation,
       dst.get_internal_format() : engine::default_format(dst_dims.size());
     tdesc_t dst_desc_in(dst_dims, dst_data_type, dst_format);
 
-    check_or_create_k(key, src, weights, with_bias, strides, dilates, padding_l, padding_r,
+    check_or_create_k(key, src, weights_desc, with_bias, strides, dilates, padding_l, padding_r,
         op_attr, src_scales, dst_scales, args...);
     fetch_or_create_m(comp, key, src_desc, weights_desc, bias_desc, dst_desc_in, strides, dilates,
             padding_l, padding_r, op_attr, std::forward<Ts>(args)...);
@@ -644,6 +657,7 @@ struct convolution_forward: public computation,
 
     tdims_t x_dims = { mb, ic, h, w};
     tdims_t y_dims = { mb, oc, oh, ow};
+    x_dtype = dtype == tdtype_t::bf16 ? dtype : x_dtype;
     auto y_dtype = (dtype != tdtype_t::s8) ? dtype : tdtype_t::s32;
     tdesc_t x_desc(x_dims, x_dtype, format::nchw);
     tdesc_t y_desc(y_dims, y_dtype, format::nchw);
@@ -705,11 +719,16 @@ public:
   template<class alloc, typename ...Ts>
   static void compute_impl(const tensor& grady, const tensor& weights,
       const tdims_t& gradx_dims, tensor& gradx, Ts&&... args) {
+    auto weights_desc = weights.get_descriptor();
+    if (grady.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
+      weights_desc = {weights.get_dims(), tdtype_t::bf16};
+    }
+
     tdesc_t result_desc(gradx_dims, grady.get_data_type());
     key_t key;
-    check_or_create_k(key, grady, weights, gradx_dims, args...);
+    check_or_create_k(key, grady, weights_desc, gradx_dims, args...);
     fetch_or_create_m(comp, key, grady.get_descriptor(),
-        weights.get_descriptor(), result_desc, std::forward<Ts>(args)...);
+        weights_desc, result_desc, std::forward<Ts>(args)...);
 
     auto grady_in = comp.transform_input_cache<alloc>(0, grady);
     auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights());
@@ -768,10 +787,10 @@ public:
   template<class alloc, bool with_gradb, typename ...Ts>
   static void compute_impl(const tensor& src, const tensor& grady, const tdims_t& gradw_dims,
       tensor& gradw, tensor& gradb, Ts&&... args) {
-    tdesc_t gradw_desc(gradw_dims, src.get_data_type());
+    tdesc_t gradw_desc(gradw_dims, src.get_data_type()); // TODO fp32 gradw
     tdesc_t gradb_desc;
     if (with_gradb) {
-      gradb_desc = {{grady.get_dim(1)}, src.get_data_type()};
+      gradb_desc = {{grady.get_dim(1)}, tdtype_t::f32}; // TODO bf16 gradb;
     }
 
     key_t key;
@@ -781,13 +800,25 @@ public:
 
     auto src_in = comp.transform_input_cache<alloc>(0, src);
     auto grady_in = comp.transform_input_cache<alloc>(1, grady);
-    gradw.reinit<alloc>(comp.expected_gradw_descriptor());
+    tensor gradw_in;
+    if (src.get_data_type() == tdtype_t::bf16) {
+      gradw_in.init<alloc>(comp.expected_gradw_descriptor());
+    } else {
+      gradw.reinit<alloc>(comp.expected_gradw_descriptor());
+      gradw_in = gradw;
+    }
 
     if (with_gradb) {
       gradb.reinit<alloc>(comp.expected_gradb_descriptor());
-      comp.execute(src_in, grady_in, gradw, gradb);
+      comp.execute(src_in, grady_in, gradw_in, gradb);
     } else {
-      comp.execute(src_in, grady_in, gradw);
+      comp.execute(src_in, grady_in, gradw_in);
+    }
+
+    // convert gradw from bf16 back to f32 dtype in option1
+    if (src.get_data_type() == tdtype_t::bf16) {
+      gradw.reinit<alloc>({gradw_in.get_dims(), tdtype_t::f32, gradw_in.get_internal_format()});
+      treorder_t::compute(gradw_in, gradw);
     }
   }
 
@@ -1125,7 +1156,8 @@ public:
       src_scales[0] /= src.get_scale()[0];
     } else {
       src_desc = src.get_descriptor();
-      IDEEP_ENFORCE(src.get_data_type() == tdtype_t::f32, "Incorrect src data type");
+      IDEEP_ENFORCE(src.get_data_type() == tdtype_t::f32 || src.get_data_type() == tdtype_t::bf16,
+                    "Incorrect src data type");
     }
 
     check_or_create_k(key, src, local_size, alpha, beta, k, aalgorithm, aprop_kind);
@@ -1348,7 +1380,8 @@ public:
   static void compute(key_t& key, const tensor& src, tensor& dst, algorithm aalgorithm = algorithm::eltwise_relu,
       prop_kind aprop_kind = prop_kind::forward, float alpha = 0.0, float beta = 0.0) {
     auto src_in = src;
-    if (aalgorithm != algorithm::eltwise_relu && src.get_data_type() != tdtype_t::f32) {
+    if (aalgorithm != algorithm::eltwise_relu && (src.get_data_type() != tdtype_t::f32 &&
+        src.get_data_type() != tdtype_t::bf16)) {
       src_in.init<alloc>({src.get_dims(), tdtype_t::f32});
       IDEEP_ENFORCE(src.has_scale(), "Can not find scales");
       IDEEP_ENFORCE(src.get_scale().size() == 1, "Incorrect scale size");
@@ -1597,7 +1630,7 @@ public:
     auto dst_data_type = inputs[0].get_data_type();
     auto dst_format = inputs[0].get_internal_format();
     scale_t min_scale(IDEEP_DEF_SCALE);
-    if (dst_data_type != tdtype_t::f32) {
+    if (dst_data_type != tdtype_t::f32 && dst_data_type != tdtype_t::bf16) {
       min_scale[0] = std::numeric_limits<float>::max();
       for (auto i : inputs) {
         if (i.get_data_type() != dst_data_type) {
@@ -1617,7 +1650,7 @@ public:
       dst.reinit<alloc>({dst_dims, dst_data_type});
     else
       dst.reinit<alloc>({dst_dims, dst_data_type, dst_format});
-    if (dst_data_type != tdtype_t::f32)
+    if (dst_data_type != tdtype_t::f32 && dst_data_type != tdtype_t::bf16)
       dst.set_scale(min_scale);
 
     scale_t scales(1);
@@ -1817,7 +1850,7 @@ public:
   static void compute(key_t& key, const tensor& src, const tensor& scale,
       const tensor& shift, tensor& dst, float epsilon) {
     auto src_in = src;
-    if (src.get_data_type() != tdtype_t::f32) {
+    if (src.get_data_type() != tdtype_t::f32 && src.get_data_type() != tdtype_t::bf16) {
       src_in.init<alloc>({src.get_dims(), tdtype_t::f32});
       IDEEP_ENFORCE(src.has_scale(), "Can not find scales");
       auto src_scales = IDEEP_DEF_SCALE;
@@ -1838,7 +1871,7 @@ public:
   static void compute(key_t& key, const tensor& src, const tensor& mean, const tensor& variance,
       const tensor& scale, const tensor& shift, tensor& dst, float epsilon) {
     auto src_in = src;
-    if (src.get_data_type() != tdtype_t::f32) {
+    if (src.get_data_type() != tdtype_t::f32 && src.get_data_type() != tdtype_t::bf16) {
       src_in.init<alloc>({src.get_dims(), tdtype_t::f32});
       IDEEP_ENFORCE(src.has_scale(), "Can not find scales");
       auto src_scales = IDEEP_DEF_SCALE;
@@ -2123,6 +2156,7 @@ struct inner_product_forward: public computation,
   template <class alloc, bool with_bias>
   static void compute_impl(inner_product_forward& comp, const tensor& src,
       const tensor& weights, const tensor& bias, tensor& dst) {
+
     auto src_in = comp.transform_input_cache<alloc>(0, src);
     auto weights_in = comp.transform_input_cache<alloc>(1, weights.as_weights());
     if (comp.dst_exp_desc_) {
@@ -2158,7 +2192,6 @@ struct inner_product_forward: public computation,
     tensor::dims dst_dims;
 
     auto weights_scales_in = weights.has_scale() ? weights.get_scale() : weights_scales;
-
     if (!weights_scales_in.empty()) {
       IDEEP_ENFORCE(alowp_kind == LOWP_U8S8 || alowp_kind == LOWP_S8S8, "Unsupported lowp kind");
 
@@ -2204,15 +2237,23 @@ struct inner_product_forward: public computation,
       }
     } else {
       op_attr = attr;
-      src_desc = {src.get_dims(), tdtype_t::f32};
       if (src.has_scale()) {
         auto src_scale = src.get_scale();
         src_scale[0] = 1.0f / src_scale[0];
         src_attr = {0, src_scale};
       }
-      dst_dims = {src_desc.get_dim(0), weights.get_dim(0)};
+
       weights_desc = weights.get_descriptor();
-      IDEEP_ENFORCE(weights.get_data_type() == tdtype_t::f32, "Incorrect data type in weights");
+      if (src.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
+        dst_data_type = tdtype_t::bf16;
+        src_desc = {src.get_dims(), tdtype_t::bf16};
+        weights_desc = {weights.get_dims(), tdtype_t::bf16};
+      } else {
+        src_desc = {src.get_dims(), tdtype_t::f32};
+      }
+      dst_dims = {src_desc.get_dim(0), weights.get_dim(0)};
+      IDEEP_ENFORCE(weights.get_data_type() == tdtype_t::f32 || weights.get_data_type() == tdtype_t::bf16,
+                    "Incorrect data type in weights");
       if (with_bias) {
         IDEEP_ENFORCE(bias.get_data_type() == tdtype_t::f32, "Incorrect data type in bias");
         bias_desc = bias.get_descriptor();
@@ -2222,7 +2263,7 @@ struct inner_product_forward: public computation,
     auto dst_format = engine::default_format(dst_dims.size());
     tdesc_t dst_desc_in(dst_dims, dst_data_type, dst_format);
 
-    check_or_create_k(key, src, weights, with_bias, op_attr, src_scales, dst_scales, args...);
+    check_or_create_k(key, src, weights_desc, with_bias, op_attr, src_scales, dst_scales, args...);
     fetch_or_create_m(comp, key, src_desc, weights_desc, bias_desc, dst_desc_in, op_attr,
         std::forward<Ts>(args)...);
 
@@ -2343,11 +2384,16 @@ struct inner_product_backward_data: public computation,
     descriptor(const tdesc_t& gradx_desc, const tdesc_t& weights_desc, const tdesc_t& grady_desc)
       : hint_(gradx_desc, weights_desc, tdesc_t(), grady_desc) {
       auto diff_src_data = gradx_desc.format_any();
-      auto weights_data = weights_desc.get_mkldnn_memory_desc_t();
+      mkldnn_memory_desc_t weights_data;
+      if (weights_desc.get_data_type() == tdtype_t::bf16) {
+        weights_data = weights_desc.format_any();
+      } else {
+        weights_data = *weights_desc.get_mkldnn_memory_desc_t();
+      }
       auto diff_dst_data = grady_desc.format_any();
       mkldnn_inner_product_desc_t data;
       error::wrap_c_api(mkldnn_inner_product_backward_data_desc_init(
-            &data, &diff_src_data, weights_data, &diff_dst_data),
+            &data, &diff_src_data, &weights_data, &diff_dst_data),
           "could not create a inner product backward data descriptor");
       create_primitive_desc(data, hint_.get());
     }
@@ -2364,8 +2410,13 @@ public:
 
   template<class alloc = utils::allocator>
   static void compute(const tensor& grady, const tensor& weights, const tdims_t& gradx_dims, tensor& gradx) {
-    auto weights_in = weights.as_weights();
+    auto weights_ = weights;
+    if (grady.get_data_type() == tdtype_t::bf16 && weights.get_data_type() == tdtype_t::f32) {
+      weights_.init<alloc>({weights_.get_dims(), tdtype_t::bf16});
+      treorder_t::compute(weights, weights_);
+    }
 
+    auto weights_in = weights_.as_weights();
     if (gradx_dims.size() != weights_in.ndims()) {
       auto new_dims = gradx_dims;
       new_dims[0] = weights_in.get_dim(0);
@@ -2424,7 +2475,7 @@ public:
 
     tdesc_t gradb_desc;
     if (with_gradb) {
-      gradb_desc = {{grady.get_dim(1)}, x.get_data_type()};
+      gradb_desc = {{grady.get_dim(1)}, tdtype_t::f32}; // TODO bf16 gradb for option2;
     }
 
     key_t key;
@@ -2433,13 +2484,25 @@ public:
 
     auto x_in = comp.transform_input_cache<alloc>(0, x);
     auto grady_in = comp.transform_input_cache<alloc>(1, grady);
-    gradw.reinit<alloc>(comp.expected_gradw_descriptor());
+    tensor gradw_in;
+    if (x.get_data_type() == tdtype_t::bf16) {
+      gradw_in.init<alloc>(comp.expected_gradw_descriptor());
+    } else {
+      gradw.reinit<alloc>(comp.expected_gradw_descriptor());
+      gradw_in = gradw;
+    }
 
     if (with_gradb) {
       gradb.reinit<alloc>(comp.expected_gradb_descriptor());
-      comp.execute(x_in, grady_in, gradw, gradb);
+      comp.execute(x_in, grady_in, gradw_in, gradb);
     } else {
-      comp.execute(x_in, grady_in, gradw);
+      comp.execute(x_in, grady_in, gradw_in);
+    }
+
+    // convert gradw from bf16 back to f32 dtype in option1
+    if (x.get_data_type() == tdtype_t::bf16) {
+      gradw.reinit<alloc>({gradw_in.get_dims(), tdtype_t::f32, gradw_in.get_internal_format()});
+      treorder_t::compute(gradw_in, gradw);
     }
   }
 
