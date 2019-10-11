@@ -83,10 +83,8 @@ using query = dnnl::query;
 using kind = dnnl::primitive::kind;
 using prop_kind = dnnl::prop_kind;
 using algorithm = dnnl::algorithm;
-using padding_kind = dnnl::padding_kind;
-using batch_normalization_flag = dnnl::batch_normalization_flag;
+using batch_normalization_flag = dnnl::normalization_flags;
 using query = dnnl::query;
-using round_mode = dnnl::round_mode;
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
 #define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
@@ -116,82 +114,88 @@ enum rnn_kind {
   GRU = 3
 };
 
-/// hide other formats
-enum format {
-  format_undef = dnnl_format_undef,
-  any = dnnl_any,
-  blocked = dnnl_blocked,
-  x = dnnl_x,
-  nc = dnnl_nc,
-  io = dnnl_io,
-  oi = dnnl_oi,
-  ncw = dnnl_ncw,
-  nwc = dnnl_nwc,
-  oiw = dnnl_oiw,
-  wio = dnnl_wio,
-  nchw = dnnl_nchw,
-  nhwc = dnnl_nhwc,
-  chwn = dnnl_chwn,
-  ncdhw = dnnl_ncdhw,
-  ndhwc = dnnl_ndhwc,
-  oihw = dnnl_oihw,
-  ihwo = dnnl_ihwo,
-  hwio = dnnl_hwio,
-  oidhw = dnnl_oidhw,
-  dhwio = dnnl_dhwio,
-  goihw = dnnl_goihw,
-  hwigo = dnnl_hwigo,
-  ntc = dnnl_ntc,
-  tnc = dnnl_tnc,
-  ldigo = dnnl_ldigo,
-  ldgoi = dnnl_ldgoi,
-  ldgo = dnnl_ldgo,
-  ldsnc = dnnl_ldsnc,
-  rnn_packed = dnnl_rnn_packed,
-  iohw = dnnl_format_last + 1,
-  format_last = iohw + 1
-};
+// /// hide other formats
+// enum format {
+//   format_undef = dnnl_format_undef,
+//   any = dnnl_any,
+//   blocked = dnnl_blocked,
+//   x = dnnl_x,
+//   nc = dnnl_nc,
+//   io = dnnl_io,
+//   oi = dnnl_oi,
+//   ncw = dnnl_ncw,
+//   nwc = dnnl_nwc,
+//   oiw = dnnl_oiw,
+//   wio = dnnl_wio,
+//   nchw = dnnl_nchw,
+//   nhwc = dnnl_nhwc,
+//   chwn = dnnl_chwn,
+//   ncdhw = dnnl_ncdhw,
+//   ndhwc = dnnl_ndhwc,
+//   oihw = dnnl_oihw,
+//   ihwo = dnnl_ihwo,
+//   hwio = dnnl_hwio,
+//   oidhw = dnnl_oidhw,
+//   dhwio = dnnl_dhwio,
+//   goihw = dnnl_goihw,
+//   hwigo = dnnl_hwigo,
+//   ntc = dnnl_ntc,
+//   tnc = dnnl_tnc,
+//   ldigo = dnnl_ldigo,
+//   ldgoi = dnnl_ldgoi,
+//   ldgo = dnnl_ldgo,
+//   ldsnc = dnnl_ldsnc,
+//   rnn_packed = dnnl_rnn_packed,
+//   iohw = dnnl_format_last + 1,
+//   format_last = iohw + 1
+// };
+
+// using engine = dnnl::engine;
+// using stream = dnnl::stream;
+
+// engine& cpu_engine() {
+//   static engine cpu_engine(engine::kind::cpu, 0);
+//   return cpu_engine;
+// }
+
+// engine& gpu_engine() {
+//   static engine gpu_engine(engine::kind::gpu, 0);
+//   return gpu_engine;
+// }
+
+// stream& default_stream() {
+//   static stream s(cpu_engine());
+//   return s;
+// }
+
+
 
 /// cpu execution engine only.
-struct engine: public dnnl::engine {
-  explicit engine(const dnnl_engine_t& aengine) = delete;
-  engine(engine const&) = delete;
-  void operator =(engine const&) = delete;
+struct engine : public dnnl::engine {
+  // explicit engine(const dnnl_engine_t& aengine) = delete;
+  // engine(engine const&) = delete;
+  // void operator =(engine const&) = delete;
 
   /// Singleton CPU engine for all primitives
   static IDEEP_EXPORT engine& cpu_engine();
 
-  inline static format default_format(int ndims) {
-    switch(ndims) {
-    case 1:
-      return format::x;
-    case 2:
-      return format::nc;
-    case 3:
-      return format::ncw;
-    case 4:
-      return format::nchw;
-    case 5:
-      return format::ncdhw;
-    default:
-      return format::format_undef;
-    }
-  }
+  /// Singleton GPU engine for all primitives
+  static IDEEP_EXPORT engine& gpu_engine();
 
-private:
-  engine(kind akind = kind::cpu)
-    :dnnl::engine(akind, 0) {
+// private:
+  engine(kind akind = kind::cpu, size_t index = 0)
+    : dnnl::engine(akind, index) {
   }
 };
 
 /// A default stream
 struct stream: public dnnl::stream {
-  using dnnl::stream::stream;
-  static stream default_stream() {
-    return stream(dnnl::stream::kind::eager);
+  // using dnnl::stream::stream;
+  static dnnl::stream& default_stream() {
+    static dnnl::stream s(engine::cpu_engine());
+    return s;
   }
 };
-
 }
 
 #endif

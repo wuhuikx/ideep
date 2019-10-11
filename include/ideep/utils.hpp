@@ -112,74 +112,6 @@ protected:
   std::shared_ptr<T> storage_;
 };
 
-using bytestring = std::string;
-
-inline void to_bytes(bytestring& bytes, const int arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-#ifndef __AVX__
-  if (arg == 0) return;
-  auto len = sizeof(arg) - (__builtin_clz(arg) / 8);
-#else
-  unsigned int lz;
-  asm volatile ("lzcntl %1, %0": "=r" (lz): "r" (arg));
-  auto len = sizeof(int) - lz / 8;
-#endif
-  bytes.append(as_cstring, len);
-}
-
-inline void to_bytes(bytestring& bytes, const bool arg) {
-  to_bytes(bytes, arg ? 1 : 0);
-  bytes.append(1, 'x');
-}
-
-inline void to_bytes(bytestring& bytes, const float arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-  bytes.append(as_cstring, sizeof(float));
-}
-
-inline void to_bytes(bytestring& str, const uint64_t arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-  str.append(as_cstring, sizeof(uint64_t));
-}
-
-template <typename T>
-inline void to_bytes(bytestring& bytes, const std::vector<T> arg) {
-  if (arg.size() > 0) {
-    for (T elems : arg) {
-      to_bytes(bytes, elems);
-      bytes.append(1, 'x');
-    }
-    bytes.pop_back();
-  } else {
-    bytes.append(1, 'x');
-  }
-}
-
-template <typename T, typename = typename std::enable_if<std::is_enum<T>::value>::type>
-inline void to_bytes(bytestring& bytes, T arg) {
-  to_bytes(bytes, static_cast<int>(arg));
-}
-
-template <typename T, typename = typename std::enable_if<std::is_class<T>::value>::type, typename = void>
-inline void to_bytes(bytestring& bytes, const T arg) {
-  arg.to_bytes(bytes);
-}
-
-template <typename T, typename ...Ts>
-inline void to_bytes(bytestring& bytes, T&& arg, Ts&&... args) {
-  to_bytes(bytes, std::forward<T>(arg));
-  bytes.append(1, '*');
-  to_bytes(bytes, std::forward<Ts>(args)...);
-}
-
-template <typename ...Ts>
-inline void create_key(key_t& key_to_create, Ts&&... args) {
-  to_bytes(key_to_create, std::forward<Ts>(args)...);
-}
-
-#define check_or_create_k(key, ...) \
-  if (key.empty()) { utils::create_key(key, __VA_ARGS__); }
-
 static void bernoulli_generate(const long n, const double p, int* r) {
 #ifndef IDEEP_USE_MKL
   IDEEP_ENFORCE(0, "can not use bernoulli_generate without MKL support");
@@ -222,7 +154,7 @@ static void inline validate_dims() {}
 template<typename... Ts>
 static void inline validate_dims(const dnnl::memory::dims& dims, Ts&... rest) {
 #ifndef NDEBUG
-  if (dims.size() > TENSOR_MAX_DIMS) {
+  if (dims.size() > DNNL_MAX_NDIMS) {
     error::wrap_c_api(dnnl_invalid_arguments, "Invalid dimesions");
   }
   validate_dims(rest...);
@@ -342,9 +274,9 @@ inline dnnl::algorithm rnn_kind_to_algorithm(rnn_kind rnn) {
   } else if (rnn == LSTM) {
     return dnnl::algorithm::vanilla_lstm;
   } else if (rnn == GRU) {
-    return dnnl::algorithm::gru_linear_before_reset;
+    return dnnl::algorithm::lbr_gru;
   } else {
-    return dnnl::algorithm::algorithm_undef;
+    return dnnl::algorithm::undef;
   }
 }
 
@@ -354,7 +286,7 @@ inline dnnl::algorithm rnn_kind_to_activation(rnn_kind rnn) {
   } else if (rnn == RNN_TANH || rnn == LSTM || rnn == GRU) {
     return dnnl::algorithm::eltwise_tanh;
   } else {
-    return dnnl::algorithm::algorithm_undef;
+    return dnnl::algorithm::undef;
   }
 }
 

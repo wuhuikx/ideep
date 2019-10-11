@@ -9,7 +9,6 @@
 
 #include "abstract_types.hpp"
 #include "allocators.hpp"
-#include "primitives.hpp"
 #include "utils.hpp"
 
 namespace ideep {
