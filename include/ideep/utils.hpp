@@ -290,6 +290,14 @@ inline dnnl::algorithm rnn_kind_to_activation(rnn_kind rnn) {
   }
 }
 
+template <typename F, typename T,
+          typename U = decltype(std::declval<F>()(std::declval<T>()))>
+std::vector<U> fmap(const std::vector<T>& vec, F f) {
+  std::vector<U> result;
+  std::transform(vec.begin(), vec.end(), std::back_inserter(result), f);
+  return result;
+}
+
 }
 }
 #endif
