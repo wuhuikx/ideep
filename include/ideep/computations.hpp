@@ -2,13 +2,13 @@
 #define IDEEP_COMPUTATIONS_HPP
 
 #include "kernels/batchnorm.hpp"
+#include "kernels/binary.hpp"
 #include "kernels/channel_shuffle.hpp"
 #include "kernels/concat.hpp"
 #include "kernels/conv.hpp"
 #include "kernels/deconv.hpp"
 #include "kernels/direct_copy.hpp"
 #include "kernels/dropout.hpp"
-#include "kernels/eltwise_binary.hpp"
 #include "kernels/eltwise.hpp"
 #include "kernels/gru.hpp"
 #include "kernels/inner_product.hpp"
