@@ -92,6 +92,32 @@ class tensor : public dnnl::memory {
       return format_kind() == dnnl_format_kind_rnn_packed;
     }
 
+    /** returns true if data is dense in memory */
+    bool is_dense(bool with_padding = false) const {
+      if (format_kind() == dnnl_format_kind_undef ||
+          format_kind() == dnnl_format_kind_any)
+        return false;
+
+      auto type_to_size = [](data_type data_type) {
+        switch (data_type) {
+          case dnnl::memory::data_type::f16:
+          case dnnl::memory::data_type::bf16:
+            return 2;
+          case dnnl::memory::data_type::f32:
+          case dnnl::memory::data_type::s32:
+            return 4;
+          case dnnl::memory::data_type::s8:
+          case dnnl::memory::data_type::u8:
+            return 1;
+          case dnnl::memory::data_type::undef:
+          default:
+            IDEEP_ENFORCE(0, "unknown data type");
+        }
+      };
+
+      return nelems(with_padding) * type_to_size(get_data_type()) == get_size();
+    }
+
     /** returns physical offset by logical one. logical offset is represented by
      * an array \param pos. if \param is_pos_padded is true \param pos
      * represents the position in already padded area */
@@ -173,7 +199,10 @@ class tensor : public dnnl::memory {
     return desc(*cdesc);
   }
 
-  tensor() = default;
+  // Constructs an tensor with no buffer and zero memory description
+  tensor()
+      : dnnl::memory({dims(0), data_type::undef, format_tag::undef}, 
+                     engine::cpu_engine(), nullptr) {}
 
   /// Constructs a tensor.
   ///
@@ -192,7 +221,7 @@ class tensor : public dnnl::memory {
          const dnnl::engine &aengine = engine::cpu_engine())
       : dnnl::memory(desc, aengine, DNNL_MEMORY_ALLOCATE) {}
 
-  // XPZ: sugar: unpack desc to avoid nested implicit conversion in constructor
+  // XPZ: sugar: unpack desc to top level to avoid nested implicit conversion
 
   // format_tag, buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
@@ -262,6 +291,8 @@ class tensor : public dnnl::memory {
   /// Returns descriptor data type
   inline data_type get_data_type() const { return get_desc().get_data_type(); }
 
+  inline size_t get_size() const { return get_desc().get_size(); }
+
   inline static format_tag get_default_format(const dims &adims) {
     switch (adims.size()) {
       case 1:
@@ -316,11 +347,17 @@ class tensor : public dnnl::memory {
     reinit(adesc, DNNL_MEMORY_ALLOCATE, aengine);
   }
 
-  void reinit_like(const tensor &t) { reinit(t.get_desc()); }
+  void reinit_like(const tensor &t) {
+    reinit(t.get_desc(), t.get_engine());
+  }
+
+  void reinit_like(const tensor &t, void *ahandle) {
+    reinit(t.get_desc(), ahandle, t.get_engine());
+  }
 
   void reinit_if_necessary(const dnnl::memory::desc &expected_desc) {
-    if (expected_desc != get_desc()) {
-      reinit(expected_desc);
+    if (expected_desc != get_desc() || get_data_handle() == nullptr) {
+      reinit(expected_desc, get_engine());
     }
   }
 
