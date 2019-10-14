@@ -7,21 +7,22 @@ namespace ideep {
 
 struct convolution_forward : public dnnl::convolution_forward {
 
+  typedef dnnl::convolution_forward super;
+
   // fp32 w/ bias
-  static void compute(
-      const tensor& src,
-      const tensor& weights,
-      const tensor& bias,
-      tensor& dst,
-      const tdims_t& strides,
-      const tdims_t& dilates,
-      const tdims_t& padding_l,
-      const tdims_t& padding_r,
-      int groups,
-      const attr_t& attr = attr_t(),
-      algorithm aalgorithm = algorithm::convolution_direct,
-      prop_kind aprop_kind = prop_kind::forward,
-      engine aengine = engine::cpu_engine()) {
+  static void compute(const tensor& src,
+                      const tensor& weights,
+                      const tensor& bias,
+                      tensor& dst,
+                      const tdims_t& strides,
+                      const tdims_t& dilates,
+                      const tdims_t& padding_l,
+                      const tdims_t& padding_r,
+                      int groups,
+                      const attr_t& attr = attr_t(),
+                      algorithm aalgorithm = algorithm::convolution_direct,
+                      prop_kind aprop_kind = prop_kind::forward,
+                      const engine& aengine = engine::cpu_engine()) {
 
     auto weights_ = weights.make_tmp_grouped_weights_if_necessary(groups);
 
@@ -30,60 +31,55 @@ struct convolution_forward : public dnnl::convolution_forward {
     auto bias_desc = bias.get_desc().to_format_any();
     auto dst_desc = dst.get_desc().to_format_any();
 
-    auto op_desc = dnnl::convolution_forward::desc(
-        aprop_kind, aalgorithm, src_desc, weights_desc, bias_desc, dst_desc,
-        strides, utils::get_compatible_dilates(dilates), padding_l, padding_r);
-
-    auto pd = dnnl::convolution_forward::primitive_desc(op_desc, attr, aengine);
+    auto pd = primitive_desc(
+        {aprop_kind, aalgorithm, src_desc, weights_desc, bias_desc, dst_desc,
+         strides, utils::get_compatible_dilates(dilates), padding_l, padding_r},
+        attr, aengine);
 
     auto expected_src = src.reorder_if_necessary(pd.src_desc());
     auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
-    dnnl::convolution_forward(pd)
-        .execute(stream::default_stream(), {
-          {DNNL_ARG_SRC, expected_src},
-          {DNNL_ARG_WEIGHTS, expected_weights},
-          {DNNL_ARG_BIAS, bias},
-          {DNNL_ARG_DST, dst}
-        });
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_SRC, expected_src},
+                       {DNNL_ARG_WEIGHTS, expected_weights},
+                       {DNNL_ARG_BIAS, bias},
+                       {DNNL_ARG_DST, dst}});
   }
 
   // fp32 w/o bias
-  static void compute(
-      const tensor& src,
-      const tensor& weights,
-      tensor& dst,
-      const tdims_t& strides,
-      const tdims_t& dilates,
-      const tdims_t& padding_l,
-      const tdims_t& padding_r,
-      int groups,
-      const attr_t& attr = attr_t(),
-      algorithm aalgorithm = algorithm::convolution_direct,
-      prop_kind aprop_kind = prop_kind::forward,
-      engine aengine = engine::cpu_engine()) {
+  static void compute(const tensor& src,
+                      const tensor& weights,
+                      tensor& dst,
+                      const tdims_t& strides,
+                      const tdims_t& dilates,
+                      const tdims_t& padding_l,
+                      const tdims_t& padding_r,
+                      int groups,
+                      const attr_t& attr = attr_t(),
+                      algorithm aalgorithm = algorithm::convolution_direct,
+                      prop_kind aprop_kind = prop_kind::forward,
+                      const engine& aengine = engine::cpu_engine()) {
+
+    auto weights_ = weights.make_tmp_grouped_weights_if_necessary(groups);
 
     auto src_desc = src.get_desc().to_format_any();
-    auto weights_desc = weights.get_desc().to_format_any();
+    auto weights_desc = weights_.get_desc().to_format_any();
     auto dst_desc = dst.get_desc().to_format_any();
 
-    auto op_desc = dnnl::convolution_forward::desc(
-        aprop_kind, aalgorithm, src_desc, weights_desc, dst_desc,
-        strides, utils::get_compatible_dilates(dilates), padding_l, padding_r);
-
-    auto pd = dnnl::convolution_forward::primitive_desc(op_desc, attr, aengine);
+    auto pd = primitive_desc(
+        {aprop_kind, aalgorithm, src_desc, weights_desc, dst_desc, strides,
+         utils::get_compatible_dilates(dilates), padding_l, padding_r},
+        attr, aengine);
 
     auto expected_src = src.reorder_if_necessary(pd.src_desc());
-    auto expected_weights = weights.reorder_if_necessary(pd.weights_desc());
+    auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
-    dnnl::convolution_forward(pd)
-        .execute(stream::default_stream(), {
-          {DNNL_ARG_SRC, expected_src},
-          {DNNL_ARG_WEIGHTS, expected_weights},
-          {DNNL_ARG_DST, dst}
-        });
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_SRC, expected_src},
+                       {DNNL_ARG_WEIGHTS, expected_weights},
+                       {DNNL_ARG_DST, dst}});
   }
 
   //  // for int8 w/ bias

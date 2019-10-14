@@ -5,7 +5,10 @@
 
 namespace ideep {
 
-struct binary {
+struct binary : public dnnl::binary {
+
+  typedef dnnl::binary super;
+
   static void compute(const tensor& src0,
                       const tensor& src1,
                       tensor& dst,
@@ -17,12 +20,13 @@ struct binary {
     dst.reinit_if_necessary(src0_desc);
     auto dst_desc = dst.get_desc();
 
-    auto pd = dnnl::binary::primitive_desc(
+    auto pd = primitive_desc(
         {aalgorithm, src0_desc, src1_desc, dst_desc}, aengine);
 
-    dnnl::binary(pd).execute(
-        stream::default_stream(),
-        {{DNNL_ARG_SRC_0, src0}, {DNNL_ARG_SRC_1, src1}, {DNNL_ARG_DST, dst}});
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_SRC_0, src0},
+                       {DNNL_ARG_SRC_1, src1},
+                       {DNNL_ARG_DST, dst}});
   }
 };
 

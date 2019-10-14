@@ -6,6 +6,9 @@
 namespace ideep {
 
 struct sum : public dnnl::sum {
+
+  typedef dnnl::sum super;
+
   static void compute(const scale_t& scales,
                       const std::vector<tensor>& inputs,
                       tensor& output,
@@ -15,7 +18,7 @@ struct sum : public dnnl::sum {
       // even tensor::desc inherits memory::desc. So we use static_cast here
       return static_cast<dnnl::memory::desc>(t.get_desc());
     });
-    auto pd = dnnl::sum::primitive_desc(scales, input_descs, aengine);
+    auto pd = primitive_desc(scales, input_descs, aengine);
 
     output.reinit_if_necessary(pd.dst_desc());
 
@@ -24,7 +27,7 @@ struct sum : public dnnl::sum {
       args.insert({DNNL_ARG_MULTIPLE_SRC + i, inputs[i]});
     }
 
-    dnnl::sum(pd).execute(stream::default_stream(), args);
+    super(pd).execute(stream::default_stream(), args);
   }
 };
 

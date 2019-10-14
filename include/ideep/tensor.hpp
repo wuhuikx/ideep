@@ -51,7 +51,7 @@ class tensor : public dnnl::memory {
 
     /// Returns dimension vector
     inline dims get_dims() const {
-      return dims(data.dims, &data.dims[data.ndims]);
+      return dims(data.dims, data.dims + data.ndims);
     }
 
     /// Returns descriptor data type
@@ -66,13 +66,9 @@ class tensor : public dnnl::memory {
      * is true, and the number of data elements otherwise */
     inline dim_t nelems(bool with_padding = false) const {
       if (is_zero()) return 0;
-      if (with_padding) {
-        return std::accumulate(data.padded_dims, &data.padded_dims[data.ndims],
-                               1, std::multiplies<dim_t>());
-      } else {
-        return std::accumulate(data.dims, &data.dims[data.ndims], 1,
-                               std::multiplies<dim_t>());
-      }
+      auto dims = with_padding ? data.padded_dims : data.dims;
+      return std::accumulate(dims, dims + data.ndims, 1,
+                             std::multiplies<dim_t>());
     }
 
     /** returns true if memory descriptor contains zero as one of its dim */
@@ -293,6 +289,11 @@ class tensor : public dnnl::memory {
 
   inline size_t get_size() const { return get_desc().get_size(); }
 
+  /// Return whether the tensor is empty
+  inline bool is_empty() const {
+    return get_desc().is_zero() && get_data_handle() == nullptr;
+  }
+
   inline static format_tag get_default_format(const dims &adims) {
     switch (adims.size()) {
       case 1:
@@ -379,6 +380,14 @@ class tensor : public dnnl::memory {
   void resize(const dims &adims, data_type adata_type) {
     auto new_desc = get_desc().reshape(adims);
     reinit(new_desc, get_engine());
+  }
+
+  /// Return an new tensor with new shape
+  tensor reshape(const dims& adims) {
+    // XPZ: TODO: support inplace reshape
+    tensor ret {adims, get_data_type(), get_engine()};
+    std::memcpy(ret.get_data_handle(), get_data_handle(), get_size());
+    return ret;
   }
 
   inline void reorder_from(const tensor &src) {
