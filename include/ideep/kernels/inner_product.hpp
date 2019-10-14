@@ -5,16 +5,55 @@
 
 namespace ideep {
 
-struct inner_product_forward: public dnnl::inner_product_forward {
-  template<bool with_bias=true>
-  static inline void compute(const tensor& src, const tensor& weights, const tensor& bias, tensor& dst,
-      const scale_t& src_scales = scale_t(), const scale_t& weights_scales = scale_t(), const scale_t& dst_scales = scale_t(),
-      const attr_t& attr = attr_t(), prop_kind aprop_kind = prop_kind::forward, const lowp_kind alowp_kind = LOWP_U8S8) {
+struct inner_product_forward : public dnnl::inner_product_forward {
+
+  typedef dnnl::inner_product_forward super;
+
+  static void compute(const tensor& src,
+                      const tensor& weights,
+                      const tensor& bias,
+                      tensor& dst,
+                      prop_kind aprop_kind = prop_kind::forward,
+                      const engine& aengine = engine::cpu_engine()) {
+    auto src_desc = src.get_desc().to_format_any();
+    auto weights_desc = weights.get_desc().to_format_any();
+    auto bias_desc = bias.get_desc().to_format_any();
+    auto dst_desc = dst.get_desc().to_format_any();
+
+    auto pd = primitive_desc(
+        {aprop_kind, src_desc, weights_desc, bias_desc, dst_desc}, aengine);
+
+    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    auto expected_weights = weights.reorder_if_necessary(pd.weights_desc());
+    dst.reinit_if_necessary(pd.dst_desc());
+
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_SRC, expected_src},
+                       {DNNL_ARG_WEIGHTS, expected_weights},
+                       {DNNL_ARG_BIAS, bias},
+                       {DNNL_ARG_DST, dst}});
   }
 
-  static void compute(const tensor& src, const tensor& weights, tensor& dst,
-      const scale_t& src_scales = scale_t(), const scale_t& weights_scales = scale_t(), const scale_t& dst_scales = scale_t(),
-      const attr_t& attr = attr_t(), prop_kind aprop_kind = prop_kind::forward, const lowp_kind alowp_kind = LOWP_U8S8) {
+  static void compute(const tensor& src,
+                      const tensor& weights,
+                      tensor& dst,
+                      prop_kind aprop_kind = prop_kind::forward,
+                      const engine& aengine = engine::cpu_engine()) {
+    auto src_desc = src.get_desc().to_format_any();
+    auto weights_desc = weights.get_desc().to_format_any();
+    auto dst_desc = dst.get_desc().to_format_any();
+
+    auto pd = primitive_desc(
+        {aprop_kind, src_desc, weights_desc, dst_desc}, aengine);
+
+    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    auto expected_weights = weights.reorder_if_necessary(pd.weights_desc());
+    dst.reinit_if_necessary(pd.dst_desc());
+
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_SRC, expected_src},
+                       {DNNL_ARG_WEIGHTS, expected_weights},
+                       {DNNL_ARG_DST, dst}});
   }
 };
 
