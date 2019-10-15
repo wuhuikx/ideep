@@ -357,7 +357,7 @@ class tensor : public dnnl::memory {
   }
 
   void reinit_if_necessary(const dnnl::memory::desc &expected_desc) {
-    if (expected_desc != get_desc() || get_data_handle() == nullptr) {
+    if (expected_desc != get_desc() || !get_data_handle()) {
       reinit(expected_desc, get_engine());
     }
   }
@@ -384,7 +384,8 @@ class tensor : public dnnl::memory {
 
   /// Return an new tensor with new shape
   tensor reshape(const dims& adims) {
-    // XPZ: TODO: support inplace reshape
+    // XPZ: TODO: support inplace reshape once we manage the buffer.
+    // Current implementation does not comply with Pytorch's semantic
     tensor ret {adims, get_data_type(), get_engine()};
     std::memcpy(ret.get_data_handle(), get_data_handle(), get_size());
     return ret;
