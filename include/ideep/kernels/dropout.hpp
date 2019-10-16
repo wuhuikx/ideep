@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_DROPOUT_HPP
 #define IDEEP_KERNELS_DROPOUT_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct dropout_forward {

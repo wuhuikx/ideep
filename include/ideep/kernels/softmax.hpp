@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_SOFTMAX_HPP
 #define IDEEP_KERNELS_SOFTMAX_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct softmax_forward : public dnnl::softmax_forward {

@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_INNER_PRODUCT_HPP
 #define IDEEP_KERNELS_INNER_PRODUCT_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct inner_product_forward : public dnnl::inner_product_forward {

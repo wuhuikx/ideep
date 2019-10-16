@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_LRN_HPP
 #define IDEEP_KERNELS_LRN_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct lrn_forward : public dnnl::lrn_forward {

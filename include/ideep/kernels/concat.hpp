@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_CONCAT_HPP
 #define IDEEP_KERNELS_CONCAT_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct concat : public dnnl::concat {

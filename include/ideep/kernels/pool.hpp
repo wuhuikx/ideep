@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_POOL_HPP
 #define IDEEP_KERNELS_POOL_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct pooling_forward : public dnnl::pooling_forward {

@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_BATCHNORM_HPP
 #define IDEEP_KERNELS_BATCHNORM_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct batch_normalization_forward_inference

@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_VANILLA_RNN_HPP
 #define IDEEP_KERNELS_VANILLA_RNN_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct rnn_forward : public dnnl::vanilla_rnn_forward {

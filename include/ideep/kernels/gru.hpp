@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_GRU_HPP
 #define IDEEP_KERNELS_GRU_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct gru_forward : public dnnl::gru_forward {

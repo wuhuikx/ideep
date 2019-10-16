@@ -1,6 +1,8 @@
 #ifndef IDEEP_COMPUTATIONS_HPP
 #define IDEEP_COMPUTATIONS_HPP
 
+#include "kernels/common.hpp"
+
 #include "kernels/batchnorm.hpp"
 #include "kernels/binary.hpp"
 #include "kernels/channel_shuffle.hpp"

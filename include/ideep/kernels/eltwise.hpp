@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_ELTWISE_HPP
 #define IDEEP_KERNELS_ELTWISE_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct eltwise_forward : public dnnl::eltwise_forward {

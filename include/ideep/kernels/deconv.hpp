@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_DECONV_HPP
 #define IDEEP_KERNELS_DECONV_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct convolution_transpose_forward : public dnnl::deconvolution_forward {

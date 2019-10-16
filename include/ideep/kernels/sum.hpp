@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_SUM_HPP
 #define IDEEP_KERNELS_SUM_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct sum : public dnnl::sum {

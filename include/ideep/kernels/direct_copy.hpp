@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_DIRECT_COPY_HPP
 #define IDEEP_KERNELS_DIRECT_COPY_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 // XPZ: might remove this op

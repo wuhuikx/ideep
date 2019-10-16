@@ -1,8 +1,6 @@
 #ifndef IDEEP_KERNELS_CHANNEL_SHUFFLE_HPP
 #define IDEEP_KERNELS_CHANNEL_SHUFFLE_HPP
 
-#include "common.hpp"
-
 namespace ideep {
 
 struct channel_shuffle_forward: public dnnl::shuffle_forward {
