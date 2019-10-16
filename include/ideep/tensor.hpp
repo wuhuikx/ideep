@@ -29,6 +29,9 @@ class tensor : public dnnl::memory {
     desc(const dims &adims, data_type adata_type, format_tag aformat_tag)
         : dnnl::memory::desc(adims, adata_type, aformat_tag) {}
 
+    desc(const dims &adims, data_type adata_type)
+        : dnnl::memory::desc(adims, adata_type, get_default_format(adims)) {}
+
     desc(const dims &adims, data_type adata_type, const dims &astrides)
         : dnnl::memory::desc(adims, adata_type, astrides) {}
 
@@ -176,7 +179,16 @@ class tensor : public dnnl::memory {
       return off_v(pos, is_pos_padded);
     }
 
+    bool is_public_format() const {
+      const blocking_desc_t &blk = blocking_desc();
+      return blk.inner_nblks == 0;
+    }
+
     desc to_format_any() const {
+      return desc(get_dims(), get_data_type(), format_tag::any);
+    }
+
+    desc to_type() const {
       return desc(get_dims(), get_data_type(), format_tag::any);
     }
 
@@ -294,6 +306,10 @@ class tensor : public dnnl::memory {
     return get_desc().is_zero() && get_data_handle() == nullptr;
   }
 
+  inline bool is_public_format() const {
+    return get_desc().is_public_format();
+  }
+
   inline static format_tag get_default_format(const dims &adims) {
     switch (adims.size()) {
       case 1:
@@ -346,6 +362,18 @@ class tensor : public dnnl::memory {
   void reinit(const dnnl::memory::desc &adesc,
               const dnnl::engine &aengine = engine::cpu_engine()) {
     reinit(adesc, DNNL_MEMORY_ALLOCATE, aengine);
+  }
+
+  // XPZ: TODO: consider to remove the following two but Caffe2 heavily uses it
+  void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit({adims, adata_type, aformat_tag}, DNNL_MEMORY_ALLOCATE, aengine);
+  }
+
+  void reinit(const dims &adims, data_type adata_type,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit({adims, adata_type, get_default_format(adims)}, DNNL_MEMORY_ALLOCATE,
+           aengine);
   }
 
   void reinit_like(const tensor &t) {
@@ -424,8 +452,36 @@ class tensor : public dnnl::memory {
   /// Decide wether there is an extra tensor packed in
   bool has_workspace() const { return workspace_ != nullptr; }
 
+  /// Return the scale of this param.
+  const scale_t& get_scale() const {
+    return *scale_.get();
+  }
+
+  /// Set new scale into param
+  void set_scale(const scale_t& ascale) {
+    scale_.reset(new scale_t(ascale));
+  }
+
+  /// Return whether the param has a scale
+  bool has_scale() const {
+    return (scale_ != nullptr) && (!scale_->empty());
+  }
+
+  /// Need reorder if current param used by non DNNL routines.
+  /// XPZ: TODO: will be removed
+  inline bool need_reorder() const {
+    return (!is_public_format() || get_data_type() != data_type::f32);
+  }
+
+  void transpose_from(const tensor& src, const std::vector<int>& axes = {}) {
+    throw error(dnnl_runtime_error, "not implemented");
+  }
+
  protected:
   std::shared_ptr<tensor> workspace_;
+  std::shared_ptr<scale_t> scale_;
+  // std::shared_ptr<char> buffer_;
+
 };
 
 ////////////////////////////////////////////////////////////////////////////////
