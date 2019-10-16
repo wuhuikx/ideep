@@ -47,6 +47,78 @@ struct convolution_forward : public dnnl::convolution_forward {
                                       attr, aalgorithm, aprop_kind, aengine);
   }
 
+  // TODO: XPZ: refactor it
+  static dnnl::memory::desc expected_weights_desc(
+      const tdims_t& weights_dims,
+      tensor::data_type dtype = tensor::data_type::f32,
+      const tdims_t& strides = {1, 1},
+      const tdims_t& padding_l = {0, 0},
+      const tdims_t& padding_r = {0, 0},
+      const tdims_t& dilates = {0, 0},
+      int groups = 1,
+      algorithm aalgorithm = algorithm::convolution_direct,
+      prop_kind aprop_kind = prop_kind::forward,
+      tensor::data_type x_dtype = tensor::data_type::f32,
+      const tdims_t& src_dims = tdims_t()) {
+
+    auto weights_desc =
+        tensor::desc(weights_dims, dtype, format_tag::oihw).to_grouped(groups);
+    auto dims_in = weights_desc.get_dims();
+
+    auto ndims = dims_in.size();
+    auto grouped = groups > 1;
+    auto g = grouped ? dims_in[0] : 1;
+    auto dilates_ = utils::get_compatible_dilates(dilates);
+
+    IDEEP_ENFORCE(
+        !(aalgorithm == algorithm::convolution_winograd && src_dims.empty()),
+        "Incorrect src_dims");
+    auto ic = g * dims_in[1 + grouped];
+    auto oc = g * dims_in[0 + grouped];
+    auto kh = dims_in[ndims - 2];
+    auto kw = dims_in[ndims - 1];
+    int mb, h, w;
+    if (src_dims.empty()) {
+      // Construct a dummy case
+      mb = 1;
+      h = 2 * kh;
+      w = 4 * kw;
+    } else {
+      // Use the real data
+      mb = src_dims[0];
+      h = src_dims[2];
+      w = src_dims[3];
+    }
+    auto oh = (h - ((kh - 1) * (dilates_[0] + 1) + 1) + (padding_l[0] + padding_r[0])) / strides[0] + 1;
+    auto ow = (w - ((kw - 1) * (dilates_[1] + 1) + 1) + (padding_l[1] + padding_r[1])) / strides[1] + 1;
+
+    tdims_t x_dims = { mb, ic, h, w };
+    tdims_t y_dims = { mb, oc, oh, ow };
+    auto y_dtype =
+        dtype != tensor::data_type::s8 ? dtype : tensor::data_type::s32;
+    tensor::desc src_desc(x_dims, x_dtype, format_tag::nchw);
+    tensor::desc dst_desc(y_dims, y_dtype, format_tag::nchw);
+
+    // FIXME: workaroud winograd format issue in inference
+    // If prop_kind == forward_inference, the dnnl_wino_fmt for weights is required by winograd primitive.
+    // Then, in the cases of variable input shape, the detials of dnnl_wino_fmt will be changed.
+    // And, extra weihgts reorder is inevitable each time, leading to bad performance.
+    // Here, we set the prop_kind to forward, in order to reorder and cache weights as blocked format,
+    // instead of dnnl_wino_fmt.
+    auto apkind = aprop_kind;
+    if (aalgorithm == algorithm::convolution_winograd &&
+        aprop_kind == prop_kind::forward_inference) {
+      apkind = prop_kind::forward;
+    }
+  
+    auto pd =
+        primitive_desc({aprop_kind, aalgorithm, src_desc, weights_desc,
+                        dst_desc, strides, dilates_, padding_l, padding_r},
+                       engine::cpu_engine());
+
+    return pd.weights_desc();
+  }
+
 private:
   template<bool with_bias>
   static void compute_impl(const tensor& src,
