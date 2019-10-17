@@ -108,17 +108,52 @@ struct convolution_forward : public dnnl::convolution_forward {
         aprop_kind == prop_kind::forward_inference) {
       apkind = prop_kind::forward;
     }
-  
-    auto pd =
-        primitive_desc({aprop_kind, aalgorithm, src_desc, weights_desc,
-                        dst_desc, strides, dilates_, padding_l, padding_r},
-                       engine::cpu_engine());
+
+    auto pd = get_primitive_desc</*with_bias=*/false>(
+        src_desc, weights_desc, tensor::desc(), dst_desc, strides, dilates_,
+        padding_l, padding_r, groups, attr_t(), aalgorithm, apkind);
 
     return pd.weights_desc();
   }
 
+  template <bool with_bias>
+  static primitive_desc get_primitive_desc(const tensor::desc& src_desc,
+                                           const tensor::desc& weights_desc,
+                                           const tensor::desc& bias_desc,
+                                           const tensor::desc& dst_desc,
+                                           const tdims_t& strides,
+                                           const tdims_t& dilates,
+                                           const tdims_t& padding_l,
+                                           const tdims_t& padding_r,
+                                           int groups,
+                                           const attr_t& attr = attr_t(),
+                                           algorithm aalgorithm = algorithm::convolution_direct,
+                                           prop_kind aprop_kind = prop_kind::forward,
+                                           const engine& aengine = engine::cpu_engine()) {
+    auto src_desc_any = src_desc.to_format_any();
+    auto weights_desc_any = weights_desc.to_format_any();
+    auto bias_desc_any = with_bias ? bias_desc.to_format_any() : tensor::desc();
+
+    auto output_size = infer_output_size(
+        src_desc_any, weights_desc_any, padding_l, padding_r, strides, dilates);
+    auto dst_desc_any = tensor::desc(
+        output_size, src_desc_any.get_data_type(), tensor::format_tag::any);
+
+    if (with_bias) {
+      return primitive_desc({aprop_kind, aalgorithm, src_desc_any,
+                             weights_desc_any, bias_desc_any, dst_desc_any,
+                             strides, dilates, padding_l, padding_r},
+                            attr, aengine);
+    } else {
+      return primitive_desc({aprop_kind, aalgorithm, src_desc_any,
+                             weights_desc_any, dst_desc_any,
+                             strides, dilates, padding_l, padding_r},
+                            attr, aengine);
+    }
+  }
+
 private:
-  template<bool with_bias>
+  template <bool with_bias>
   static void compute_impl(const tensor& src,
                            const tensor& weights,
                            const tensor& bias,
@@ -137,53 +172,38 @@ private:
     auto weights_ = weights.make_tmp_grouped_weights_if_necessary(groups);
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
-    auto src_desc = src.get_desc().to_format_any();
-    auto weights_desc = weights_.get_desc().to_format_any();
-    auto bias_desc = bias.get_desc().to_format_any();
-
-    tensor::desc dst_desc;
-    if (!dst.is_empty()) {
-      dst_desc = dst.get_desc().to_format_any();
-    } else {
-      auto output_size = infer_output_size(
-          src, weights_, padding_l, padding_r, strides, dilates_);
-      dst_desc = tensor::desc(
-          output_size, src_desc.get_data_type(), tensor::format_tag::any);
-    }
-
-    auto pd = with_bias
-        ? primitive_desc({aprop_kind, aalgorithm, src_desc, weights_desc,
-                          bias_desc, dst_desc, strides, dilates_, padding_l,
-                          padding_r}, attr, aengine)
-        : primitive_desc({aprop_kind, aalgorithm, src_desc, weights_desc,
-                          dst_desc, strides, dilates_, padding_l,
-                          padding_r}, attr, aengine);
+    auto pd = get_primitive_desc<with_bias>(
+        src.get_desc(), weights_.get_desc(), bias.get_desc(), dst.get_desc(),
+        strides, dilates_, padding_l, padding_r, groups, attr, aalgorithm,
+        aprop_kind, aengine);
 
     auto expected_src = src.reorder_if_necessary(pd.src_desc());
     auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
-    std::unordered_map<int, dnnl::memory> args
-        {{DNNL_ARG_SRC, expected_src},
-         {DNNL_ARG_WEIGHTS, expected_weights},
-         {DNNL_ARG_DST, dst}};
-
     if (with_bias) {
-      args.insert({DNNL_ARG_BIAS, bias});
+      super(pd).execute(stream::default_stream(), 
+                        {{DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_WEIGHTS, expected_weights},
+                         {DNNL_ARG_BIAS, bias},
+                         {DNNL_ARG_DST, dst}});
+    } else {
+      super(pd).execute(stream::default_stream(), 
+                        {{DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_WEIGHTS, expected_weights},
+                         {DNNL_ARG_DST, dst}});
     }
-
-    super(pd).execute(stream::default_stream(), args);
   }
 
-  inline static tdims_t infer_output_size(const tensor& input,
-                                          const tensor& weights,
+  inline static tdims_t infer_output_size(const tensor::desc& input_desc,
+                                          const tensor::desc& weights_desc,
                                           const tdims_t& padding_l,
                                           const tdims_t& padding_r,
                                           const tdims_t& strides,
                                           const tdims_t& dilates) {
     // XPZ: TODO: Assert format. Assume NCHW
-    auto input_size = input.get_dims();
-    auto kernel_size = weights.get_dims();
+    auto input_size = input_desc.get_dims();
+    auto kernel_size = weights_desc.get_dims();
     auto with_groups = kernel_size.size() == (input_size.size() + 1);
 
     auto dim = input_size.size();
@@ -206,27 +226,78 @@ private:
 
 
 struct convolution_backward_data : public dnnl::convolution_backward_data {
-  template <class alloc = utils::allocator>
-  static void compute(const tensor& grady, const tensor& weights,
-                      const tdims_t& gradx_dims, tensor& gradx,
-                      const tdims_t& strides, const tdims_t& dilates,
-                      const tdims_t& padding_l, const tdims_t& padding_r,
-                      const int group,
-                      algorithm aalgorithm = algorithm::convolution_direct) {}
+
+  typedef dnnl::convolution_backward_data super;
+
+  static void compute(const tensor& diff_dst,
+                      const tensor& weights,
+                      const tdims_t& diff_src_dims,
+                      tensor& diff_src,
+                      const tdims_t& strides,
+                      const tdims_t& dilates,
+                      const tdims_t& padding_l,
+                      const tdims_t& padding_r,
+                      const int groups,
+                      algorithm aalgorithm = algorithm::convolution_direct,
+                      const engine& aengine = engine::cpu_engine()) {
+    // make weights and dilates compatible with DNNL
+    auto weights_ = weights.make_tmp_grouped_weights_if_necessary(groups);
+    auto dilates_ = utils::get_compatible_dilates(dilates);
+
+    auto diff_dst_desc = diff_dst.get_desc().to_format_any();
+    auto weights_desc = weights_.get_desc().to_format_any();
+
+    tensor::desc diff_src_desc = tensor::desc(
+        diff_src_dims, diff_dst_desc.get_data_type(), tensor::format_tag::any);
+
+    auto forward_hints =
+        convolution_forward::get_primitive_desc</*with_bias=*/false>(
+            diff_src_desc, weights_desc, tensor::desc(), diff_dst_desc, strides,
+            dilates, padding_l, padding_r, groups);
+
+    auto pd = primitive_desc(
+        {aalgorithm, diff_src_desc, weights_desc, diff_dst_desc, strides,
+         dilates_, padding_l, padding_r}, aengine, forward_hints);
+
+    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+    auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
+    diff_src.reinit_if_necessary(pd.diff_src_desc());
+
+    super(pd).execute(stream::default_stream(), 
+                      {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                       {DNNL_ARG_WEIGHTS, expected_weights},
+                       {DNNL_ARG_DIFF_SRC, diff_src}});
+  }
 };
 
 
 struct convolution_backward_weights : public dnnl::convolution_backward_weights {
-  template<bool with_gradb = true>
-  static void compute(const tensor& src, const tensor& grady, const tdims_t& gradw_dims,
-      tensor& gradw, tensor& gradb, const tdims_t& strides, const tdims_t& dilates, const tdims_t& padding_l,
-      const tdims_t& padding_r, const int group, algorithm aalgorithm = algorithm::convolution_direct) {
+  template <bool with_gradb = true>
+  static void compute(const tensor& src,
+                      const tensor& diff_dst,
+                      const tdims_t& gradw_dims,
+                      tensor& gradw,
+                      tensor& gradb,
+                      const tdims_t& strides,
+                      const tdims_t& dilates,
+                      const tdims_t& padding_l,
+                      const tdims_t& padding_r,
+                      const int groups,
+                      algorithm aalgorithm = algorithm::convolution_direct) {
+    std::cout << "convolution_backward_weights" << std::endl;
   }
 
-  static void compute(const tensor& src, const tensor& grady, const tdims_t& gradw_dims,
-      tensor& gradw, const tdims_t& strides, const tdims_t& dilates,
-      const tdims_t& padding_l, const tdims_t& padding_r, const int group,
-      algorithm aalgorithm = algorithm::convolution_direct) {
+  static void compute(const tensor& src,
+                      const tensor& diff_dst,
+                      const tdims_t& gradw_dims,
+                      tensor& gradw,
+                      const tdims_t& strides,
+                      const tdims_t& dilates,
+                      const tdims_t& padding_l,
+                      const tdims_t& padding_r,
+                      const int group,
+                      algorithm aalgorithm = algorithm::convolution_direct) {
+    std::cout << "convolution_backward_weights" << std::endl;
   }
 };
 
