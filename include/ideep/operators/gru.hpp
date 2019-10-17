@@ -1,5 +1,5 @@
-#ifndef IDEEP_KERNELS_GRU_HPP
-#define IDEEP_KERNELS_GRU_HPP
+#ifndef IDEEP_OPERATORS_GRU_HPP
+#define IDEEP_OPERATORS_GRU_HPP
 
 namespace ideep {
 

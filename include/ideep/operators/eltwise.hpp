@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_ELTWISE_HPP
-#define IDEEP_KERNELS_ELTWISE_HPP
+#ifndef IDEEP_OPERATORS_ELTWISE_HPP
+#define IDEEP_OPERATORS_ELTWISE_HPP
 
 namespace ideep {
 
 struct eltwise_forward : public dnnl::eltwise_forward {
 
-  typedef dnnl::eltwise_forward super;
+  using super = dnnl::eltwise_forward;
 
   static void compute(const tensor& src,
                       tensor& dst,

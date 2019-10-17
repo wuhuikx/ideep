@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_BINARY_HPP
-#define IDEEP_KERNELS_BINARY_HPP
+#ifndef IDEEP_OPERATORS_BINARY_HPP
+#define IDEEP_OPERATORS_BINARY_HPP
 
 namespace ideep {
 
 struct binary : public dnnl::binary {
 
-  typedef dnnl::binary super;
+  using super = dnnl::binary;
 
   static void compute(const tensor& src0,
                       const tensor& src1,

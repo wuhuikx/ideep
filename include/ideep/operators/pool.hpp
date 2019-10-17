@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_POOL_HPP
-#define IDEEP_KERNELS_POOL_HPP
+#ifndef IDEEP_OPERATORS_POOL_HPP
+#define IDEEP_OPERATORS_POOL_HPP
 
 namespace ideep {
 
 struct pooling_forward : public dnnl::pooling_forward {
 
-  typedef dnnl::pooling_forward super;
+  using super = dnnl::pooling_forward;
 
   static void compute(const tensor& src,
                       tensor& dst,
@@ -33,6 +33,34 @@ struct pooling_forward : public dnnl::pooling_forward {
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, src}, {DNNL_ARG_DST, dst}});
   }
+
+private:
+  // tdims_t infer_output_sizes(const tdims_t& input_size,
+  //                            const tdims_t& kernel_size,
+  //                            const tdims_t& stride,
+  //                            const tdims_t& padding_l,
+  //                            const tdims_t& padding_r,
+  //                            const tdims_t& dilation,
+  //                            bool ceil_mode) {
+
+  //   auto dim = input_size.size();
+  //   tdims_t output_size(dim);
+  //   output_size[0] = input_size[0];
+  //   output_size[1] = input_size[1];
+  //   for (size_t i = 2; i < dim; ++i) {
+  //     output_size[i] = pooling_output_shape_pad_lr<int64_t>(
+  //       input_size[i],
+  //       kernel_size[i - 2],
+  //       padding_l[i - 2],
+  //       padding_r[i - 2],
+  //       stride[i - 2],
+  //       dilation[i - 2],
+  //       ceil_mode
+  //     );
+  //   }
+
+  //   return output_size;
+  // }
 };
 
 struct pooling_backward : public dnnl::pooling_backward {

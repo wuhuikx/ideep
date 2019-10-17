@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_INNER_PRODUCT_HPP
-#define IDEEP_KERNELS_INNER_PRODUCT_HPP
+#ifndef IDEEP_OPERATORS_INNER_PRODUCT_HPP
+#define IDEEP_OPERATORS_INNER_PRODUCT_HPP
 
 namespace ideep {
 
 struct inner_product_forward : public dnnl::inner_product_forward {
 
-  typedef dnnl::inner_product_forward super;
+  using super = dnnl::inner_product_forward;
 
   static void compute(const tensor& src,
                       const tensor& weights,

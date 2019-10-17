@@ -1,5 +1,5 @@
-#ifndef IDEEP_KERNELS_LSTM_HPP
-#define IDEEP_KERNELS_LSTM_HPP
+#ifndef IDEEP_OPERATORS_LSTM_HPP
+#define IDEEP_OPERATORS_LSTM_HPP
 
 namespace ideep {
 

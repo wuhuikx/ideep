@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_SUM_HPP
-#define IDEEP_KERNELS_SUM_HPP
+#ifndef IDEEP_OPERATORS_SUM_HPP
+#define IDEEP_OPERATORS_SUM_HPP
 
 namespace ideep {
 
 struct sum : public dnnl::sum {
 
-  typedef dnnl::sum super;
+  using super = dnnl::sum;
 
   static void compute(const scale_t& scales,
                       const std::vector<tensor>& inputs,

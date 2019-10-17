@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_SOFTMAX_HPP
-#define IDEEP_KERNELS_SOFTMAX_HPP
+#ifndef IDEEP_OPERATORS_SOFTMAX_HPP
+#define IDEEP_OPERATORS_SOFTMAX_HPP
 
 namespace ideep {
 
 struct softmax_forward : public dnnl::softmax_forward {
 
-  typedef dnnl::softmax_forward super;
+  using super = dnnl::softmax_forward;
 
   static void compute(const tensor& src,
                       tensor& dst,

@@ -1,12 +1,12 @@
-#ifndef IDEEP_KERNELS_BATCHNORM_HPP
-#define IDEEP_KERNELS_BATCHNORM_HPP
+#ifndef IDEEP_OPERATORS_BATCHNORM_HPP
+#define IDEEP_OPERATORS_BATCHNORM_HPP
 
 namespace ideep {
 
 struct batch_normalization_forward_inference
     : public dnnl::batch_normalization_forward {
 
-  typedef dnnl::batch_normalization_forward super;
+  using super = dnnl::batch_normalization_forward;
 
   // XPZ: TODO: fold these two overloads
   static void compute(const tensor& src,

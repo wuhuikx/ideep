@@ -1,11 +1,11 @@
-#ifndef IDEEP_KERNELS_CONV_HPP
-#define IDEEP_KERNELS_CONV_HPP
+#ifndef IDEEP_OPERATORS_CONV_HPP
+#define IDEEP_OPERATORS_CONV_HPP
 
 namespace ideep {
 
 struct convolution_forward : public dnnl::convolution_forward {
 
-  typedef dnnl::convolution_forward super;
+  using super = dnnl::convolution_forward;
 
   // fp32 w/ bias
   static void compute(const tensor& src,
@@ -227,7 +227,7 @@ private:
 
 struct convolution_backward_data : public dnnl::convolution_backward_data {
 
-  typedef dnnl::convolution_backward_data super;
+  using super = dnnl::convolution_backward_data;
 
   static void compute(const tensor& diff_dst,
                       const tensor& weights,
