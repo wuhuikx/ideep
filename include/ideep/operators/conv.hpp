@@ -117,19 +117,20 @@ struct convolution_forward : public dnnl::convolution_forward {
   }
 
   template <bool with_bias>
-  static primitive_desc get_primitive_desc(const tensor::desc& src_desc,
-                                           const tensor::desc& weights_desc,
-                                           const tensor::desc& bias_desc,
-                                           const tensor::desc& dst_desc,
-                                           const tdims_t& strides,
-                                           const tdims_t& dilates,
-                                           const tdims_t& padding_l,
-                                           const tdims_t& padding_r,
-                                           int groups,
-                                           const attr_t& attr = attr_t(),
-                                           algorithm aalgorithm = algorithm::convolution_direct,
-                                           prop_kind aprop_kind = prop_kind::forward,
-                                           const engine& aengine = engine::cpu_engine()) {
+  static primitive_desc get_primitive_desc(
+      const tensor::desc& src_desc,
+      const tensor::desc& weights_desc,
+      const tensor::desc& bias_desc,
+      const tensor::desc& dst_desc,
+      const tdims_t& strides,
+      const tdims_t& dilates,
+      const tdims_t& padding_l,
+      const tdims_t& padding_r,
+      int groups,
+      const attr_t& attr = attr_t(),
+      algorithm aalgorithm = algorithm::convolution_direct,
+      prop_kind aprop_kind = prop_kind::forward,
+      const engine& aengine = engine::cpu_engine()) {
     auto src_desc_any = src_desc.to_format_any();
     auto weights_desc_any = weights_desc.to_format_any();
     auto bias_desc_any = with_bias ? bias_desc.to_format_any() : tensor::desc();

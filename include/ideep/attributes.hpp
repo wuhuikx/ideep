@@ -1,15 +1,34 @@
-#ifndef IDEEP_KERNELS_COMMON_HPP
-#define IDEEP_KERNELS_COMMON_HPP
+#ifndef IDEEP_ATTRIBUTES_HPP
+#define IDEEP_ATTRIBUTES_HPP
 
-#include "../abstract_types.hpp"
-#include "../tensor.hpp"
-#include "../utils.hpp"
+#include "abstract_types.hpp"
 
 namespace ideep {
 
-using tdims_t = tensor::dims;
-using tdim_t = tensor::dim;
-using post_ops = dnnl::post_ops;
+struct post_ops : public dnnl::post_ops {
+
+  bool has_op_kind(dnnl::primitive::kind op_kind) const {
+    for (int i = 0; i < len(); i++)
+      if (op_kind == kind(i))
+        return true;
+    return false;
+  }
+
+  bool non_negitive_output() const {
+    // auto last = len() - 1;
+    // if (last < 0) {
+    //   return false;
+    // }
+
+    // auto params = get_params(last);
+    // if (std::get<0>(params) != kind::eltwise || std::get<1>(params) <= 0.f ||
+    //     std::get<2>(params) != 0.f || std::get<3>(params) != 0.f ||
+    //     std::get<4>(params) != algorithm::eltwise_relu)
+    //   return false;
+
+    // return true;
+  }
+};
 
 /// Attribute class for extra information into computations
 struct attr_t : public dnnl::primitive_attr {

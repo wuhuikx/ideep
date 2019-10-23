@@ -8,6 +8,7 @@
 #include <numeric>
 
 #include "abstract_types.hpp"
+#include "attributes.hpp"
 #include "allocators.hpp"
 #include "utils.hpp"
 
@@ -180,8 +181,7 @@ class tensor : public dnnl::memory {
     }
 
     bool is_public_format() const {
-      const blocking_desc_t &blk = blocking_desc();
-      return blk.inner_nblks == 0;
+      return is_blocking_desc() && blocking_desc().inner_nblks == 0;
     }
 
     desc to_format_any() const {
@@ -390,6 +390,7 @@ class tensor : public dnnl::memory {
     }
   }
 
+  // no data copy
   tensor make_tmp_grouped_weights_if_necessary(int groups) const {
     if (groups > 1) {
       // XPZ: TODO: any other check?
@@ -425,9 +426,9 @@ class tensor : public dnnl::memory {
         .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
   }
 
-  inline void reorder_to(tensor &dst) const {
-    // https://github.com/intel/mkl-dnn/issues/571
-    dnnl::reorder(*this, dst)
+  inline void reorder_to(tensor &dst, const attr_t& aattr = attr_t()) const {
+    auto pd = dnnl::reorder::primitive_desc(*this, dst, aattr);
+    dnnl::reorder(pd)
         .execute(stream::default_stream(), const_cast<tensor &>(*this), dst);
   }
 
@@ -464,7 +465,8 @@ class tensor : public dnnl::memory {
 
   /// Return whether the param has a scale
   bool has_scale() const {
-    return (scale_ != nullptr) && (!scale_->empty());
+    // return (scale_ != nullptr) && (!scale_->empty());
+    return false;
   }
 
   /// Need reorder if current param used by non DNNL routines.
