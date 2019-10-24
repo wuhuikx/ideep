@@ -8,6 +8,7 @@ struct pooling_forward : public dnnl::pooling_forward {
   using super = dnnl::pooling_forward;
 
   static void compute(const tensor& src,
+                      const tdims_t& output_sizes,
                       tensor& dst,
                       const tdims_t& strides,
                       const tdims_t& kernel,
@@ -22,7 +23,7 @@ struct pooling_forward : public dnnl::pooling_forward {
     //                       aalgorithm == dnnl::algorithm::pooling_max;
 
     auto src_desc = src.get_desc();
-    auto dst_desc = dst.get_desc();
+    auto dst_desc = tensor::desc(output_sizes, tensor::data_type::f32);
 
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,

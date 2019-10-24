@@ -11,6 +11,7 @@ struct convolution_forward : public dnnl::convolution_forward {
   static void compute(const tensor& src,
                       const tensor& weights,
                       const tensor& bias,
+                      const tdims_t& output_sizes,
                       tensor& dst,
                       const tdims_t& strides,
                       const tdims_t& dilates,
@@ -29,6 +30,7 @@ struct convolution_forward : public dnnl::convolution_forward {
   // fp32 w/o bias
   static void compute(const tensor& src,
                       const tensor& weights,
+                      const tdims_t& output_sizes,
                       tensor& dst,
                       const tdims_t& strides,
                       const tdims_t& dilates,
