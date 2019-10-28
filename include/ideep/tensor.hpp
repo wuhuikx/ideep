@@ -217,52 +217,128 @@ class tensor : public dnnl::memory {
   /// @param desc tensor descriptor.
   /// @param aengine Engine.
   /// @param ahandle handle.
-  tensor(const dnnl::memory::desc &desc, void *ahandle,
-         const dnnl::engine &aengine = engine::cpu_engine())
-      : dnnl::memory(desc, aengine, ahandle) {}
+  tensor(const dnnl::memory::desc &adesc, void *ahandle,
+         const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit(adesc, ahandle, aengine);     
+  }
 
   /// Constructs a memory.
   ///
   /// @param desc tensor descriptor.
   /// @param aengine Engine.
-  tensor(const dnnl::memory::desc &desc,
-         const dnnl::engine &aengine = engine::cpu_engine())
-      : dnnl::memory(desc, aengine, DNNL_MEMORY_ALLOCATE) {}
+  tensor(const dnnl::memory::desc &adesc,
+         const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit(adesc, aengine);
+  }
 
   // XPZ: sugar: unpack desc to top level to avoid nested implicit conversion
 
   // format_tag, buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
-         void *ahandle, const dnnl::engine &aengine = engine::cpu_engine())
-      : dnnl::memory({adims, adata_type, aformat_tag}, aengine, ahandle) {}
+         void *ahandle, const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit(adims, adata_type, aformat_tag, ahandle, aengine);
+  }
 
   // format_tag, no buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
-         const dnnl::engine &aengine = engine::cpu_engine())
-      : dnnl::memory({adims, adata_type, aformat_tag}, aengine,
-                     DNNL_MEMORY_ALLOCATE) {}
+         const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit(adims, adata_type, aformat_tag, aengine);
+  }
 
   // no format_tag, buffer
   tensor(const dims &adims, data_type adata_type, void *ahandle,
-         const dnnl::engine &aengine = engine::cpu_engine())
-      : dnnl::memory({adims, adata_type, get_default_format(adims)}, aengine,
-                     ahandle) {}
+         const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit(adims, adata_type, ahandle, aengine);
+  }
 
   // no format_tag, no buffer
   tensor(const dims &adims, data_type adata_type,
-         const dnnl::engine &aengine = engine::cpu_engine())
-      : dnnl::memory({adims, adata_type, get_default_format(adims)}, aengine,
-                     DNNL_MEMORY_ALLOCATE) {}
+         const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit(adims, adata_type, aengine);
+  }
+
+  /// Function that refill tensor with new description. Specifiy extra buffer.
+  void reinit(const dnnl::memory::desc &adesc, void *ahandle,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    buffer_.reset();
+    workspace_.reset();
+    scale_.reset();
+
+    dnnl_memory_t result;
+    error::wrap_c_api(
+        dnnl_memory_create(&result, &adesc.data, aengine.get(), ahandle),
+        "could not create a memory");
+    reset(result);
+  }
+
+  /// Function that refill tensor with new description or buffer
+  void reinit(const dnnl::memory::desc &adesc,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    // XPZ: TODO: use engine allocator
+    buffer_.reset(utils::allocator::malloc(adesc.get_size()),
+                  utils::allocator::free);
+    workspace_.reset();
+    scale_.reset();
+
+    dnnl_memory_t result;
+    error::wrap_c_api(
+        dnnl_memory_create(&result, &adesc.data, aengine.get(), buffer_.get()),
+        "could not create a memory");
+    reset(result);
+  }
+
+  // format_tag, buffer
+  void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
+              void *ahandle,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit({adims, adata_type, aformat_tag}, ahandle, aengine);
+  }
+
+  // format_tag, no buffer
+  void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit({adims, adata_type, aformat_tag}, aengine);
+  }
+
+  // no format_tag, buffer
+  void reinit(const dims &adims, data_type adata_type, void *ahandle,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit({adims, adata_type, get_default_format(adims)}, ahandle, aengine);
+  }
+
+  // no format_tag, no buffer
+  void reinit(const dims &adims, data_type adata_type,
+              const dnnl::engine &aengine = engine::cpu_engine()) {
+    reinit({adims, adata_type, get_default_format(adims)}, aengine);
+  }
+
+  void reinit_like(const tensor &t) {
+    reinit(t.get_desc(), t.get_engine());
+  }
+
+  void reinit_like(const tensor &t, void *ahandle) {
+    reinit(t.get_desc(), ahandle, t.get_engine());
+  }
+
+  void reinit_if_necessary(const dnnl::memory::desc &expected_desc) {
+    if (expected_desc != get_desc() || !get_data_handle()) {
+      reinit(expected_desc, get_engine());
+    }
+  }
 
   /// Copy constructor
   tensor(const tensor &t) : dnnl::memory(t) {
     // std::cout << "tensor copy ctor" << std::endl;
+    buffer_ = t.buffer_;
+    scale_ = t.scale_;
     workspace_ = t.workspace_;
   }
 
   /// Move constructor
   tensor(tensor &&t) : dnnl::memory(std::move(t)) {
     // std::cout << "tensor move ctor" << std::endl;
+    buffer_ = std::move(t.buffer_);
+    scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
   }
 
@@ -270,6 +346,8 @@ class tensor : public dnnl::memory {
   tensor &operator=(const tensor &t) {
     // std::cout << "tensor copy assign" << std::endl;
     dnnl::memory::operator=(t);
+    buffer_ = t.buffer_;
+    scale_ = t.scale_;
     workspace_ = t.workspace_;
     return *this;
   }
@@ -278,6 +356,8 @@ class tensor : public dnnl::memory {
   tensor &operator=(tensor &&t) {
     // std::cout << "tensor move assign" << std::endl;
     dnnl::memory::operator=(std::move(t));
+    buffer_ = std::move(t.buffer_);
+    scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
     return *this;
   }
@@ -347,77 +427,40 @@ class tensor : public dnnl::memory {
     }
   }
 
-  /// Function that refill tensor with new description. Specifiy extra buffer.
-  void reinit(const dnnl::memory::desc &adesc, void *ahandle,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
-    dnnl_memory_t result;
-    error::wrap_c_api(
-        dnnl_memory_create(&result, &adesc.data, aengine.get(), ahandle),
-        "could not create a memory");
-    reset(result);
-    workspace_.reset();
-  }
-
-  /// Function that refill tensor with new description or buffer
-  void reinit(const dnnl::memory::desc &adesc,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
-    reinit(adesc, DNNL_MEMORY_ALLOCATE, aengine);
-  }
-
-  // XPZ: TODO: consider to remove the following two but Caffe2 heavily uses it
-  void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
-    reinit({adims, adata_type, aformat_tag}, DNNL_MEMORY_ALLOCATE, aengine);
-  }
-
-  void reinit(const dims &adims, data_type adata_type,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
-    reinit({adims, adata_type, get_default_format(adims)}, DNNL_MEMORY_ALLOCATE,
-           aengine);
-  }
-
-  void reinit_like(const tensor &t) {
-    reinit(t.get_desc(), t.get_engine());
-  }
-
-  void reinit_like(const tensor &t, void *ahandle) {
-    reinit(t.get_desc(), ahandle, t.get_engine());
-  }
-
-  void reinit_if_necessary(const dnnl::memory::desc &expected_desc) {
-    if (expected_desc != get_desc() || !get_data_handle()) {
-      reinit(expected_desc, get_engine());
-    }
-  }
-
   // no data copy
   tensor make_tmp_grouped_weights_if_necessary(int groups) const {
     if (groups > 1) {
       // XPZ: TODO: any other check?
       auto grouped_desc = get_desc().to_grouped(groups);
-      // warning: as this new tensor shares the buffer with the original one,
-      // its lifetime should not be longer than the original tensor.
-      return tensor(grouped_desc, get_data_handle());
+      auto this_copy = *this;
+      this_copy.replace_desc(grouped_desc);
+      return this_copy;
     } else {
       return *this;
     }
   }
 
-  /// Recreate a param with completely different content from old one
-  /// but reuse the param shell. Notice that after resize, its format
-  /// is undefined
-  void resize(const dims &adims, data_type adata_type) {
-    auto new_desc = get_desc().reshape(adims);
-    reinit(new_desc, get_engine());
-  }
+  // /// Recreate a param with completely different content from old one
+  // /// but reuse the param shell. Notice that after resize, its format
+  // /// is undefined
+  // void resize(const dims &adims, data_type adata_type) {
+  //   auto new_desc = get_desc().reshape(adims);
+  //   reinit(new_desc, get_engine());
+  // }
 
   /// Return an new tensor with new shape
-  tensor reshape(const dims& adims) {
-    // XPZ: TODO: support inplace reshape once we manage the buffer.
-    // Current implementation does not comply with Pytorch's semantic
-    tensor ret {adims, get_data_type(), get_engine()};
-    std::memcpy(ret.get_data_handle(), get_data_handle(), get_size());
-    return ret;
+  tensor& reshape(const dims& adims) {
+    if (!has_same_volume(adims)) {
+      throw error(dnnl_runtime_error, "reshape to incompatible shape");
+    }
+    if (adims != get_dims()) {
+      if (!is_public_format()) {
+        throw error(dnnl_runtime_error, "XPZ: TODO: reorder");
+      }
+      // XPZ: TODO: keep format structure
+      replace_desc({adims, get_data_type()});
+    }
+    return *this;
   }
 
   inline void reorder_from(const tensor &src) {
@@ -454,20 +497,13 @@ class tensor : public dnnl::memory {
   bool has_workspace() const { return workspace_ != nullptr; }
 
   /// Return the scale of this param.
-  const scale_t& get_scale() const {
-    return *scale_.get();
-  }
+  const scale_t &get_scale() const { return *scale_.get(); }
 
   /// Set new scale into param
-  void set_scale(const scale_t& ascale) {
-    scale_.reset(new scale_t(ascale));
-  }
+  void set_scale(const scale_t &ascale) { scale_.reset(new scale_t(ascale)); }
 
   /// Return whether the param has a scale
-  bool has_scale() const {
-    // return (scale_ != nullptr) && (!scale_->empty());
-    return false;
-  }
+  bool has_scale() const { return scale_ != nullptr && !scale_->empty(); }
 
   /// Need reorder if current param used by non DNNL routines.
   /// XPZ: TODO: will be removed
@@ -480,10 +516,33 @@ class tensor : public dnnl::memory {
   }
 
  protected:
+
+  bool has_same_volume(const dims &new_dims) const {
+    auto old_dims = get_dims();
+    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
+                                      std::multiplies<dim_t>());
+    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
+                                      std::multiplies<dim_t>());
+    return volume_old == volume_new;
+  }
+
+  /// Set a descriptor into tensor to replace the older one, keep buffer
+  /// It is caller's responsibility to make sure the original buffer is large
+  /// enough for specified descriptor
+  void replace_desc(const desc& new_desc) {
+    // Keep the original management
+    auto buf = std::move(buffer_);
+    auto ws = std::move(workspace_);
+    auto scale = std::move(scale_);
+    reinit(new_desc, get_data_handle(), get_engine());
+    buffer_ = std::move(buf);
+    workspace_ = std::move(ws);
+    scale_ = std::move(scale);
+  }
+
   std::shared_ptr<tensor> workspace_;
   std::shared_ptr<scale_t> scale_;
-  // std::shared_ptr<char> buffer_;
-
+  std::shared_ptr<void> buffer_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
