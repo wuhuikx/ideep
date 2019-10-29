@@ -58,6 +58,11 @@ class tensor : public dnnl::memory {
       return dims(data.dims, data.dims + data.ndims);
     }
 
+    inline dims get_strides() const {
+      const auto& blk = blocking_desc();
+      return dims(blk.strides, blk.strides + data.ndims);
+    }
+
     /// Returns descriptor data type
     inline data_type get_data_type() const {
       return static_cast<data_type>(data.data_type);
@@ -218,8 +223,10 @@ class tensor : public dnnl::memory {
       return desc(clone_data);
     }
 
-    desc to_type() const {
-      return desc(get_dims(), get_data_type(), format_tag::any);
+    desc to_type(data_type atype) const {
+      auto ret = clone();
+      ret.data.data_type = static_cast<dnnl_data_type_t>(atype);
+      return ret;
     }
 
     desc to_grouped(int groups) const {
@@ -515,6 +522,7 @@ class tensor : public dnnl::memory {
   }
 
   /// Convert the tensor to public format, and f32 data type by default
+  // XPZ: TODO: scale_out ??
   inline tensor to_public(void *array = nullptr, bool scale_out = true) const {
     tensor dst{get_dims(), get_data_type(), array};
     this->reorder_to(dst);
@@ -555,8 +563,55 @@ class tensor : public dnnl::memory {
     return (!is_public_format() || get_data_type() != data_type::f32);
   }
 
+  tensor permute(const std::vector<int> &permute_axes = {}) const {
+    if (ndims() <= 1) {
+      return to_public();
+    }
+
+    auto axes = permute_axes;
+    if (axes.empty()) {
+      axes.resize(ndims());
+      std::iota(axes.rbegin(), axes.rend(), 0);
+    } else {
+      IDEEP_ENFORCE(static_cast<int>(axes.size()) == ndims(),
+                    "Axes should be size like source tensor.");
+      auto axes_sorted = axes;
+      std::sort(axes_sorted.begin(), axes_sorted.end());
+      for (auto i = 0; i < axes_sorted.size(); ++i) {
+        IDEEP_ENFORCE(static_cast<float>(axes_sorted[i]) == i,
+                      "Axes should be a permutation of 0 to ndim.");
+      }
+      if (axes_sorted == axes) {
+        return to_public();
+      }
+    }
+
+    auto src = is_public_format() ? *this : to_public();
+    auto src_dims = src.get_dims();
+    dims dst_dims(src_dims.size());
+    for (int i = 0; i < src_dims.size(); i++) {
+      dst_dims[i] = src_dims[axes[i]];
+    }
+
+    tensor dst {dst_dims, src.get_data_type()};
+    auto dst_stride = dst.get_desc().get_strides();
+    dims stride(dst_stride.size(), 1);
+    for (int i = stride.size() - 2; i >= 0; i--) {
+      stride[axes[i]] = dst_stride[i];
+    }
+
+    tensor mask_dst{{src.get_dims(), src.get_data_type(), stride},
+                    dst.get_data_handle()};
+    src.reorder_to(mask_dst);
+    if (src.has_scale()) {
+      dst.set_scale(src.get_scale());
+    }
+
+    return dst;
+  }
+
   void transpose_from(const tensor &src, const std::vector<int> &axes = {}) {
-    throw error(dnnl_runtime_error, "not implemented");
+    *this = std::move(src.permute(axes));
   }
 
  protected:
