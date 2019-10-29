@@ -237,17 +237,13 @@ class tensor : public dnnl::memory {
     return desc(*cdesc);
   }
 
-  desc dup_desc() const {
-    return get_desc().clone();
-  }
-
-  // For backward compatibility. Will be deprecated.
-  desc dup_descriptor() const {
-    return dup_desc();
-  }
-
   // For backward compatibility. Will be deprecated.
   desc get_descriptor() const { return get_desc(); }
+
+  desc dup_desc() const { return get_desc().clone(); }
+
+  // For backward compatibility. Will be deprecated.
+  desc dup_descriptor() const { return dup_desc(); }
 
   // Constructs an tensor with no buffer and zero memory description
   tensor()
@@ -514,8 +510,8 @@ class tensor : public dnnl::memory {
 
   inline void reorder_to(tensor &dst, const attr_t &aattr = attr_t()) const {
     auto pd = dnnl::reorder::primitive_desc(*this, dst, aattr);
-    dnnl::reorder(pd).execute(stream::default_stream(),
-                              const_cast<tensor &>(*this), dst);
+    dnnl::reorder(pd)
+        .execute(stream::default_stream(), const_cast<tensor &>(*this), dst);
   }
 
   /// Convert the tensor to public format, and f32 data type by default
