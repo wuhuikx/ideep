@@ -8,8 +8,8 @@
 #include <numeric>
 
 #include "abstract_types.hpp"
-#include "attributes.hpp"
 #include "allocators.hpp"
+#include "attributes.hpp"
 #include "utils.hpp"
 
 namespace ideep {
@@ -91,6 +91,30 @@ class tensor : public dnnl::memory {
     bool is_rnn_packed_desc() const {
       return format_kind() == dnnl_format_kind_rnn_packed;
     }
+
+    inline bool is_plain() {
+      return is_blocking_desc() && blocking_desc().inner_nblks == 0;
+    };
+
+    inline bool is_nhwc() {
+      if (!is_plain() || ndims() != 4) return false;
+      const auto &dims = data.dims;
+      const auto &strides = data.format_desc.blocking.strides;
+      return strides[0] == dims[1] * dims[2] * dims[3]  // stride_n = c * h * w
+             && strides[1] == 1                         // stride_c = 1
+             && strides[2] == dims[3] * dims[1]         // stride_h = w * c
+             && strides[3] == dims[3];                  // stride_w = c
+    };
+
+    inline bool is_nchw() {
+      if (!is_plain() || ndims() != 4) return false;
+      const auto &dims = data.dims;
+      const auto &strides = data.format_desc.blocking.strides;
+      return strides[0] == dims[1] * dims[2] * dims[3]  // stride_n = c * h * w
+             && strides[1] == dims[2] * dims[3]         // stride_c = 1
+             && strides[2] == dims[3]                   // stride_h = w * c
+             && strides[3] == 1;                        // stride_w = c
+    };
 
     /** returns true if data is dense in memory */
     bool is_dense(bool with_padding = false) const {
@@ -188,6 +212,12 @@ class tensor : public dnnl::memory {
       return desc(get_dims(), get_data_type(), format_tag::any);
     }
 
+    desc clone() const {
+      dnnl_memory_desc_t clone_data;
+      memcpy(&clone_data, &data, sizeof(dnnl_memory_desc_t));
+      return desc(clone_data);
+    }
+
     desc to_type() const {
       return desc(get_dims(), get_data_type(), format_tag::any);
     }
@@ -207,9 +237,21 @@ class tensor : public dnnl::memory {
     return desc(*cdesc);
   }
 
+  desc dup_desc() const {
+    return get_desc().clone();
+  }
+
+  // For backward compatibility. Will be deprecated.
+  desc dup_descriptor() const {
+    return dup_desc();
+  }
+
+  // For backward compatibility. Will be deprecated.
+  desc get_descriptor() const { return get_desc(); }
+
   // Constructs an tensor with no buffer and zero memory description
   tensor()
-      : dnnl::memory({dims(0), data_type::undef, format_tag::undef}, 
+      : dnnl::memory({dims(0), data_type::undef, format_tag::undef},
                      engine::cpu_engine(), nullptr) {}
 
   /// Constructs a tensor.
@@ -219,7 +261,7 @@ class tensor : public dnnl::memory {
   /// @param ahandle handle.
   tensor(const dnnl::memory::desc &adesc, void *ahandle,
          const dnnl::engine &aengine = engine::cpu_engine()) {
-    reinit(adesc, ahandle, aengine);     
+    reinit(adesc, ahandle, aengine);
   }
 
   /// Constructs a memory.
@@ -440,16 +482,17 @@ class tensor : public dnnl::memory {
     }
   }
 
-  // /// Recreate a param with completely different content from old one
-  // /// but reuse the param shell. Notice that after resize, its format
-  // /// is undefined
-  // void resize(const dims &adims, data_type adata_type) {
-  //   auto new_desc = get_desc().reshape(adims);
-  //   reinit(new_desc, get_engine());
-  // }
+  /// Recreate a param with completely different content from old one
+  /// but reuse the param shell. Notice that after resize, its format
+  /// is undefined
+  /// XPZ: For caffe2
+  void resize(const dims &adims, data_type adata_type) {
+    auto new_desc = get_desc().reshape(adims);
+    reinit(new_desc, get_engine());
+  }
 
   /// Return an new tensor with new shape
-  tensor& reshape(const dims& adims) {
+  tensor &reshape(const dims &adims) {
     if (!has_same_volume(adims)) {
       throw error(dnnl_runtime_error, "reshape to incompatible shape");
     }
@@ -469,10 +512,10 @@ class tensor : public dnnl::memory {
         .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
   }
 
-  inline void reorder_to(tensor &dst, const attr_t& aattr = attr_t()) const {
+  inline void reorder_to(tensor &dst, const attr_t &aattr = attr_t()) const {
     auto pd = dnnl::reorder::primitive_desc(*this, dst, aattr);
-    dnnl::reorder(pd)
-        .execute(stream::default_stream(), const_cast<tensor &>(*this), dst);
+    dnnl::reorder(pd).execute(stream::default_stream(),
+                              const_cast<tensor &>(*this), dst);
   }
 
   /// Convert the tensor to public format, and f32 data type by default
@@ -483,7 +526,12 @@ class tensor : public dnnl::memory {
   }
 
   /// Fill the tensor with a src tensor
-  inline void feed_from(const tensor &src) { this->reorder_from(src); }
+  void feed_from(const tensor &src) { this->reorder_from(src); }
+
+  // For backward compatibility. Will be deprecated.
+  void feed_from(const dims &adims, data_type adata_type, const void *array) {
+    feed_from({adims, adata_type, const_cast<void *>(array)});
+  }
 
   void init_workspace(desc &desc) {
     auto workspace = new tensor(desc, get_engine());
@@ -511,12 +559,11 @@ class tensor : public dnnl::memory {
     return (!is_public_format() || get_data_type() != data_type::f32);
   }
 
-  void transpose_from(const tensor& src, const std::vector<int>& axes = {}) {
+  void transpose_from(const tensor &src, const std::vector<int> &axes = {}) {
     throw error(dnnl_runtime_error, "not implemented");
   }
 
  protected:
-
   bool has_same_volume(const dims &new_dims) const {
     auto old_dims = get_dims();
     auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
@@ -529,7 +576,7 @@ class tensor : public dnnl::memory {
   /// Set a descriptor into tensor to replace the older one, keep buffer
   /// It is caller's responsibility to make sure the original buffer is large
   /// enough for specified descriptor
-  void replace_desc(const desc& new_desc) {
+  void replace_desc(const desc &new_desc) {
     // Keep the original management
     auto buf = std::move(buffer_);
     auto ws = std::move(workspace_);
