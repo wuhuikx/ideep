@@ -26,16 +26,33 @@ struct eltwise_forward : public dnnl::eltwise_forward {
 };
 
 struct eltwise_backward : public dnnl::eltwise_backward {
+  using super = dnnl::eltwise_backward;
   // If grady and x had different format, performance is bad.
   // TODO: Seeking a single shot solution.
   static void compute(const tensor& src,
-                      const tensor& grady,
-                      tensor& gradx,
+                      const tensor& diff_dst,
+                      tensor& diff_src,
                       algorithm aalgorithm = algorithm::eltwise_relu,
                       float alpha = 0.0,
-                      float beta = 0.0) {}
+                      float beta = 0.0,
+                      const engine& aengine = engine::cpu_engine()) {
+  auto src_desc = src.get_desc();
+  auto diff_dst_ = diff_dst.reorder_if_necessary(src_desc);
+  auto forward_hints = eltwise_forward::primitive_desc(
+      {prop_kind::forward, aalgorithm, src_desc, alpha, beta}, aengine);
+  auto pd = primitive_desc(
+      {aalgorithm, diff_dst.get_desc(), src_desc, alpha, beta}, aengine, forward_hints);
+  auto expected_diff_dst = diff_dst_.reorder_if_necessary(pd.diff_dst_desc());
+  auto expected_src = src.reorder_if_necessary(pd.src_desc());
+  if (diff_dst != diff_src) {
+    diff_src.reinit_if_necessary(pd.diff_src_desc());
+  }
+  super(pd).execute(stream::default_stream(),
+                    {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                    {DNNL_ARG_SRC, expected_src},
+                    {DNNL_ARG_DIFF_SRC, diff_src}});
+  }
 };
-
 }  // namespace ideep
 
 #endif
