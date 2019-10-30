@@ -25,7 +25,9 @@ class tensor : public dnnl::memory {
   struct desc : public dnnl::memory::desc {
     desc() : dnnl::memory::desc(){};
 
-    desc(const dnnl_memory_desc_t &adata) : dnnl::memory::desc(adata){};
+    desc(const dnnl::memory::desc &adesc) : dnnl::memory::desc(adesc.data) {};
+
+    desc(const dnnl_memory_desc_t &adata) : dnnl::memory::desc(adata) {};
 
     desc(const dims &adims, data_type adata_type, format_tag aformat_tag)
         : dnnl::memory::desc(adims, adata_type, aformat_tag) {}
@@ -58,7 +60,7 @@ class tensor : public dnnl::memory {
       return dims(data.dims, data.dims + data.ndims);
     }
 
-    inline dims get_strides() const {
+    inline dims get_block_strides() const {
       const auto& blk = blocking_desc();
       return dims(blk.strides, blk.strides + data.ndims);
     }
@@ -229,12 +231,34 @@ class tensor : public dnnl::memory {
       return ret;
     }
 
-    desc to_grouped(int groups) const {
+    desc to_grouped(int groups, bool is_deconv = false) const {
+      // for deconv with g > 1, the format is go(i/g)hw given oihw and group,
+      // for conv with g > 1, the format is g(o/g)ihw given oihw and group
       auto dims = get_dims();
+      auto ndims = dims.size();
       dims.insert(dims.begin(), groups);
-      dims[1] /= groups;
-      return desc(dims, get_data_type(), format_tag::goihw);
+      dims[is_deconv + 1] /= groups;
+      auto ret = desc(dims, get_data_type(),
+                      ndims == 4 ? format_tag::goihw : format_tag::goidhw);
+      return ret;
     }
+
+    desc to_ungrouped(bool is_deconv = false) const {
+      auto dims = get_dims();
+      auto groups = dims[0];
+      dims[is_deconv + 1] *= groups;
+      dims.erase(dims.begin());
+      auto ndims = dims.size();
+      auto ret = desc(dims, get_data_type(),
+                      ndims == 4 ? format_tag::oihw : format_tag::oidhw);
+      return ret;
+    }
+
+    // bool is_grouped() const { 
+    //   std::cout << (bool)data.extra.reserved[63] << std::endl;
+    //   return data.extra.reserved[63]; }
+
+    // bool set_grouped(bool grouped) { data.extra.reserved[63] = grouped; }
   };
 
   desc get_desc() const {
@@ -473,15 +497,14 @@ class tensor : public dnnl::memory {
   }
 
   // no data copy
-  tensor make_tmp_grouped_weights_if_necessary(int groups) const {
-    if (groups > 1) {
-      // XPZ: TODO: any other check?
-      auto grouped_desc = get_desc().to_grouped(groups);
-      auto this_copy = *this;
-      this_copy.replace_desc(grouped_desc);
-      return this_copy;
-    } else {
+  tensor make_grouped_weights(int groups, bool is_deconv = false) const {
+    if (groups <= 1) {
       return *this;
+    } else {
+      auto grouped_desc = get_desc().to_grouped(groups, is_deconv);
+      auto this_copy = *this;
+      this_copy.set_desc(grouped_desc);
+      return this_copy;
     }
   }
 
@@ -504,7 +527,7 @@ class tensor : public dnnl::memory {
         throw error(dnnl_runtime_error, "XPZ: TODO: reorder");
       }
       // XPZ: TODO: keep format structure
-      replace_desc({adims, get_data_type()});
+      set_desc({adims, get_data_type()});
     }
     return *this;
   }
@@ -535,6 +558,16 @@ class tensor : public dnnl::memory {
   // For backward compatibility. Will be deprecated.
   void feed_from(const dims &adims, data_type adata_type, const void *array) {
     feed_from({adims, adata_type, const_cast<void *>(array)});
+  }
+
+  /// Reordering weights
+  void feed_from_weights(const tensor &src,
+                         int groups = 1, bool is_deconv = false) {
+    auto mask_dst = this->make_grouped_weights(groups, is_deconv);
+    auto mask_src = src.make_grouped_weights(groups, is_deconv);
+    dnnl::reorder(mask_src, mask_dst).execute(stream::default_stream(),
+                                              const_cast<tensor &>(mask_src),
+                                              mask_dst);
   }
 
   void init_workspace(desc &desc) {
@@ -594,7 +627,7 @@ class tensor : public dnnl::memory {
     }
 
     tensor dst {dst_dims, src.get_data_type()};
-    auto dst_stride = dst.get_desc().get_strides();
+    auto dst_stride = dst.get_desc().get_block_strides();
     dims stride(dst_stride.size(), 1);
     for (int i = stride.size() - 2; i >= 0; i--) {
       stride[axes[i]] = dst_stride[i];
@@ -627,7 +660,7 @@ class tensor : public dnnl::memory {
   /// Set a descriptor into tensor to replace the older one, keep buffer
   /// It is caller's responsibility to make sure the original buffer is large
   /// enough for specified descriptor
-  void replace_desc(const desc &new_desc) {
+  void set_desc(const desc &new_desc) {
     // Keep the original management
     auto buf = std::move(buffer_);
     auto ws = std::move(workspace_);

@@ -61,12 +61,13 @@ struct convolution_forward : public dnnl::convolution_forward {
       tensor::data_type x_dtype = tensor::data_type::f32,
       const tdims_t& src_dims = tdims_t()) {
 
-    auto weights_desc =
-        tensor::desc(weights_dims, dtype, format_tag::oihw).to_grouped(groups);
-    auto dims_in = weights_desc.get_dims();
-
-    auto ndims = dims_in.size();
     auto grouped = groups > 1;
+    auto weights_desc_usr = tensor::desc(weights_dims, dtype, format_tag::oihw);
+    auto weights_desc =
+        grouped ? weights_desc_usr.to_grouped(groups) : weights_desc_usr;
+
+    auto dims_in = weights_desc.get_dims();
+    auto ndims = dims_in.size();
     auto g = grouped ? dims_in[0] : 1;
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
@@ -115,7 +116,12 @@ struct convolution_forward : public dnnl::convolution_forward {
         src_desc, weights_desc, tensor::desc(), dst_desc, strides, dilates_,
         padding_l, padding_r, groups, attr_t(), aalgorithm, apkind);
 
-    return pd.weights_desc();
+    if (!grouped) {
+      return pd.weights_desc();
+    } else {
+      // hide group info from the outside world
+      return tensor::desc(pd.weights_desc()).to_ungrouped();
+    }
   }
 
   template <bool with_bias>
@@ -172,7 +178,7 @@ private:
                            const engine& aengine) {
 
     // make weights and dilates compatible with DNNL
-    auto weights_ = weights.make_tmp_grouped_weights_if_necessary(groups);
+    auto weights_ = weights.make_grouped_weights(groups);
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
     auto pd = get_primitive_desc<with_bias>(
@@ -244,7 +250,7 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
                       algorithm aalgorithm = algorithm::convolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
     // make weights and dilates compatible with DNNL
-    auto weights_ = weights.make_tmp_grouped_weights_if_necessary(groups);
+    auto weights_ = weights.make_grouped_weights(groups);
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
     auto diff_dst_desc = diff_dst.get_desc().to_format_any();
