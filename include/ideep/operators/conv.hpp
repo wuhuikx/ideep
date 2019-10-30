@@ -275,6 +275,7 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
 
 
 struct convolution_backward_weights : public dnnl::convolution_backward_weights {
+  using super = dnnl::convolution_backward_weights;
   template <bool with_gradb = true>
   static void compute(const tensor& src,
                       const tensor& diff_dst,
@@ -286,8 +287,22 @@ struct convolution_backward_weights : public dnnl::convolution_backward_weights 
                       const tdims_t& padding_l,
                       const tdims_t& padding_r,
                       const int groups,
-                      algorithm aalgorithm = algorithm::convolution_direct) {
-    std::cout << "convolution_backward_weights" << std::endl;
+                      algorithm aalgorithm = algorithm::convolution_direct,
+                      const engine& aengine = engine::cpu_engine()) {
+    auto gw_dims_in = gradw_dims;
+    auto src_size = src.ndims();
+    auto grouped = IDEEP_IS_GROUPED(src_size, gw_dims_in);
+    if (groups > 1 && !grouped) {
+      tensor::group_dims(gw_dims_in, groups);
+    }
+    compute_impl<with_gradb>(src, diff_dst, gw_dims_in, gradw, gradb, strides, dilates,
+        padding_l, padding_r, groups, aalgorithm, aengine);
+    if (groups > 1 && !grouped) {
+      IDEEP_ENFORCE(groups == gradw.get_dim(0), "invalid dim 0 in grouped gradw");
+      IDEEP_ENFORCE(gradw_dims[0] == groups * gradw.get_dim(1), "invalid dim 1 in grouped gradw");
+      IDEEP_ENFORCE(gradw_dims.size() == gradw.ndims() - 1, "invalid ndim in grouped gradw");
+      gradw.reshape(gradw_dims);
+    }
   }
 
   static void compute(const tensor& src,
@@ -299,11 +314,62 @@ struct convolution_backward_weights : public dnnl::convolution_backward_weights 
                       const tdims_t& padding_l,
                       const tdims_t& padding_r,
                       const int group,
-                      algorithm aalgorithm = algorithm::convolution_direct) {
-    std::cout << "convolution_backward_weights" << std::endl;
+                      algorithm aalgorithm = algorithm::convolution_direct,
+                      const engine& aengine = engine::cpu_engine()) {
+   static tensor dummy_gradb;
+   compute<false>(src, diff_dst, gradw_dims, gradw, dummy_gradb, strides, dilates, padding_l,
+        padding_r, group, aalgorithm, aengine);
+  }
+
+private:
+  template <bool with_gradb>
+  static void compute_impl(const tensor& src,
+                           const tensor& diff_dst,
+                           const tdims_t& gradw_dims,
+                           tensor& gradw,
+                           tensor& gradb,
+                           const tdims_t& strides,
+                           const tdims_t& dilates,
+                           const tdims_t& padding_l,
+                           const tdims_t& padding_r,
+                           const int groups,
+                           algorithm aalgorithm,
+                           const engine& aengine) {
+    auto dilates_ = utils::get_compatible_dilates(dilates);
+    auto diff_dst_desc = diff_dst.get_desc().to_format_any();
+    auto src_desc = src.get_desc().to_format_any();
+    tensor::desc gradw_desc = tensor::desc(gradw_dims, diff_dst_desc.get_data_type(), tensor::format_tag::any);
+    tensor::desc gradb_desc = with_gradb ? tensor::desc({diff_dst.get_dim(1)},
+        diff_dst_desc.get_data_type(), tensor::format_tag::any)
+        : tensor::desc();
+    auto forward_hints =
+        convolution_forward::get_primitive_desc<with_gradb>(
+            src_desc, gradw_desc, gradb_desc, diff_dst_desc, strides, dilates_,
+            padding_l, padding_r, groups, attr_t(), aalgorithm, prop_kind::forward, aengine);
+    auto pd = with_gradb ? primitive_desc(
+        {aalgorithm, src_desc, gradw_desc, gradb_desc, diff_dst_desc, strides,
+        dilates_, padding_l, padding_r}, aengine, forward_hints)
+        : primitive_desc(
+        {aalgorithm, src_desc, gradw_desc, diff_dst_desc, strides,
+        dilates_, padding_l, padding_r}, aengine, forward_hints);
+    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    gradw.reinit_if_necessary(pd.diff_weights_desc());
+    if (with_gradb) {
+      gradb.reinit_if_necessary(pd.diff_bias_desc());
+      super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                         {DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_DIFF_WEIGHTS, gradw},
+                         {DNNL_ARG_DIFF_BIAS, gradb}});
+    } else {
+      super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                         {DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_DIFF_WEIGHTS, gradw}});
+    }
   }
 };
-
 }  // namespace ideep
 
 #endif
