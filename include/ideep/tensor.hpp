@@ -496,6 +496,26 @@ class tensor : public dnnl::memory {
     }
   }
 
+  static inline void group_dims(dims& adims, const int group, const bool deconv = false) {
+    adims.insert(adims.begin(), group);
+    if (deconv) {
+      adims[2] /= group;
+    } else {
+      adims[1] /= group;
+    }
+  }
+
+  static inline int ungroup_dims(dims& adims, const bool deconv = false) {
+    int group = adims[0];
+    if (deconv) {
+      adims[2] *= group;
+    } else {
+      adims[1] *= group;
+    }
+    adims.erase(adims.begin());
+    return group;
+  }
+
   // no data copy
   tensor make_grouped_weights(int groups, bool is_deconv = false) const {
     if (groups <= 1) {
