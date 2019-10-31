@@ -330,7 +330,6 @@ class tensor : public dnnl::memory {
   void reinit(const dnnl::memory::desc &adesc, void *ahandle,
               const dnnl::engine &aengine = engine::cpu_engine()) {
     buffer_.reset();
-    workspace_.reset();
     scale_.reset();
 
     dnnl_memory_t result;
@@ -346,7 +345,6 @@ class tensor : public dnnl::memory {
     // XPZ: TODO: use engine allocator
     buffer_.reset(utils::allocator::malloc(adesc.get_size()),
                   utils::allocator::free);
-    workspace_.reset();
     scale_.reset();
 
     dnnl_memory_t result;
