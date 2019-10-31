@@ -12,8 +12,7 @@ struct sum : public dnnl::sum {
                       tensor& output,
                       const engine& aengine = engine::cpu_engine()) {
     auto input_descs = utils::fmap(inputs, [](const tensor& t) {
-      // We cannot upcast vector<tensor::desc> to vector<dnnl::memory::desc>
-      // even tensor::desc inherits memory::desc. So we use static_cast here
+      // "upcast" vector<tensor::desc> to vector<dnnl::memory::desc>
       return static_cast<dnnl::memory::desc>(t.get_desc());
     });
     auto pd = primitive_desc(scales, input_descs, aengine);

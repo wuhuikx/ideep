@@ -558,6 +558,15 @@ class tensor : public dnnl::memory {
     feed_from({adims, adata_type, const_cast<void *>(array)});
   }
 
+  // data copy
+  tensor extract_submemory(const dims &adims, const dims &offsets) const {
+    auto view = get_desc().submemory_desc(adims, offsets);
+    tensor dst {adims, get_data_type()};
+    dnnl::reorder({get_engine(), view, get_engine(), dst.get_desc()})
+        .execute(stream::default_stream(), const_cast<tensor &>(*this), dst);
+    return dst;
+  }
+
   /// Reordering weights
   void feed_from_weights(const tensor &src,
                          int groups = 1, bool is_deconv = false) {
