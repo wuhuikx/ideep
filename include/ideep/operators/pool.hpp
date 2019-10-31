@@ -4,9 +4,7 @@
 namespace ideep {
 
 struct pooling_forward : public dnnl::pooling_forward {
-
   using super = dnnl::pooling_forward;
-
   static void compute(const tensor& src,
                       const tdims_t& output_sizes,
                       tensor& dst,
@@ -15,12 +13,10 @@ struct pooling_forward : public dnnl::pooling_forward {
                       const tdims_t& padding_l,
                       const tdims_t& padding_r,
                       algorithm aalgorithm,
-                      prop_kind aprop_kind = prop_kind::forward_inference,
+                      prop_kind aprop_kind = prop_kind::forward,
                       const engine& aengine = engine::cpu_engine()) {
-
-    // XPZ: TODO: workspace for training
-    // bool with_workspace = aprop_kind == prop_kind::forward_training &&
-    //                       aalgorithm == dnnl::algorithm::pooling_max;
+    bool with_workspace = true && aprop_kind == prop_kind::forward_training
+        && aalgorithm == dnnl::algorithm::pooling_max;
 
     auto src_desc = src.get_desc();
     auto dst_desc = tensor::desc(output_sizes, tensor::data_type::f32);
@@ -29,11 +25,22 @@ struct pooling_forward : public dnnl::pooling_forward {
         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,
          padding_r}, aengine);
 
-    dst.reinit_if_necessary(pd.dst_desc());
-
-    super(pd).execute(stream::default_stream(),
-                      {{DNNL_ARG_SRC, src}, {DNNL_ARG_DST, dst}});
-  }
+    if (dst != src) {
+      dst.reinit_if_necessary(pd.dst_desc());
+    }
+    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    if (with_workspace) {
+      dst.init_workspace(pd.workspace_desc());
+      super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_DST, dst},
+                         {DNNL_ARG_WORKSPACE, dst.get_workspace()}});
+    } else {
+      super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_SRC, src},
+                         {DNNL_ARG_DST, dst}});
+    }
+ }
 
 private:
   // tdims_t infer_output_sizes(const tdims_t& input_size,
@@ -65,15 +72,40 @@ private:
 };
 
 struct pooling_backward : public dnnl::pooling_backward {
-  static void compute(const tensor& grady,
-                      const tensor& y,
-                      const tensor& x,
-                      tensor& gradx,
+  using super = dnnl::pooling_backward;
+  static void compute(const tensor& diff_dst,
+                      const tensor& dst,
+                      const tensor& src,
+                      tensor& diff_src,
                       const tdims_t& strides,
                       const tdims_t& kernel,
                       const tdims_t& padding_l,
                       const tdims_t& padding_r,
-                      algorithm aalgorithm) {}
+                      algorithm aalgorithm,
+                      const engine& aengine = engine::cpu_engine()) {
+     auto src_desc = src.get_desc();
+     auto dst_desc = dst.get_desc();
+     auto forward_hints = pooling_forward::primitive_desc(
+         {prop_kind::forward, aalgorithm, src_desc, dst_desc,
+         strides, kernel, padding_l, padding_r}, aengine);
+     auto pd = primitive_desc({aalgorithm, src_desc, dst_desc, strides,
+         kernel, padding_l, padding_r}, aengine, forward_hints);
+     auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+     if (diff_dst != diff_src) {
+       diff_src.reinit_if_necessary(pd.diff_src_desc());
+     }
+     if (dst.has_workspace()) {
+       auto expected_workspace = dst.get_workspace().reorder_if_necessary(pd.workspace_desc());
+       super(pd).execute(stream::default_stream(),
+                         {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                          {DNNL_ARG_DIFF_SRC, diff_src},
+                          {DNNL_ARG_WORKSPACE, expected_workspace}});
+     } else {
+       super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                         {DNNL_ARG_DIFF_SRC, diff_src}});
+     }
+  }
 };
 
 }  // namespace ideep

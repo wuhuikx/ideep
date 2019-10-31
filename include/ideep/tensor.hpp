@@ -570,7 +570,7 @@ class tensor : public dnnl::memory {
                                               mask_dst);
   }
 
-  void init_workspace(desc &desc) {
+  void init_workspace(const dnnl::memory::desc &desc) {
     auto workspace = new tensor(desc, get_engine());
     workspace_.reset(workspace);
   }
