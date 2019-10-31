@@ -82,6 +82,7 @@ using prop_kind = dnnl::prop_kind;
 using algorithm = dnnl::algorithm;
 using batch_normalization_flag = dnnl::normalization_flags;
 using query = dnnl::query;
+using data_type = dnnl::memory::data_type;
 
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
