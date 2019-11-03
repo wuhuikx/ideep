@@ -31,64 +31,63 @@ struct concat : public dnnl::concat {
   }
 
   // for caffe2
+  // TODO: XPZ: correctness?
   static std::vector<int32_t> compute(
       std::vector<tensor>& inputs,
       int axis,
       bool add_axis,
       tensor& dst,
       const engine& aengine = engine::cpu_engine()) {
-    // IDEEP_ENFORCE(axis < (inputs[0].ndims() + (add_axis ? 1 : 0)),
-    //               "invalid axis in concat");
-    // for (int i = 0; i < inputs[0].ndims(); i++) {
-    //   if (i == axis && !add_axis) continue;
-    //   for (unsigned j = 1; j < inputs.size(); j++) {
-    //     IDEEP_ENFORCE(inputs[j].get_dim(i) == inputs[0].get_dim(i),
-    //                   "invalid input dims in concat");
-    //   }
-    // }
+    IDEEP_ENFORCE(axis < (inputs[0].ndims() + (add_axis ? 1 : 0)),
+                  "invalid axis in concat");
+    for (int i = 0; i < inputs[0].ndims(); i++) {
+      if (i == axis && !add_axis) continue;
+      for (unsigned j = 1; j < inputs.size(); j++) {
+        IDEEP_ENFORCE(inputs[j].get_dim(i) == inputs[0].get_dim(i),
+                      "invalid input dims in concat");
+      }
+    }
 
-    // int32_t dst_channels = 0;
-    // std::vector<int32_t> axis_info(inputs.size(), 0);
-    // for (unsigned k = 0; k < inputs.size(); k++) {
-    //   axis_info[k] = add_axis ? 1 : inputs[k].get_dim(axis);
-    //   dst_channels += axis_info[k];
-    // }
+    int32_t dst_channels = 0;
+    std::vector<int32_t> axis_info(inputs.size(), 0);
+    for (unsigned k = 0; k < inputs.size(); k++) {
+      axis_info[k] = add_axis ? 1 : inputs[k].get_dim(axis);
+      dst_channels += axis_info[k];
+    }
 
-    // tdims_t dst_dims(inputs[0].get_dims());
-    // if (add_axis)
-    //   dst_dims.insert(dst_dims.begin() + axis, dst_channels);
-    // else
-    //   dst_dims[axis] = dst_channels;
+    tdims_t dst_dims(inputs[0].get_dims());
+    if (add_axis)
+      dst_dims.insert(dst_dims.begin() + axis, dst_channels);
+    else
+      dst_dims[axis] = dst_channels;
 
-    // auto dst_data_type = inputs[0].get_data_type();
-    // auto dst_format = inputs[0].get_internal_format();
-    // scale_t min_scale(IDEEP_DEF_SCALE);
-    // if (dst_data_type != tensor::data_type::f32) {
-    //   min_scale[0] = std::numeric_limits<float>::max();
-    //   for (auto i : inputs) {
-    //     if (i.get_data_type() != dst_data_type) {
-    //       min_scale = IDEEP_DEF_SCALE;
-    //       dst_data_type = tensor::data_type::f32;
-    //       break;
-    //     }
-    //     if (i.has_scale() && (min_scale[0] > i.get_scale()[0])) {
-    //       IDEEP_ENFORCE(i.get_scale().size() == 1, "incorrect scale size");
-    //       min_scale[0] = i.get_scale()[0];
-    //     }
-    //   }
-    // }
+    auto dst_data_type = inputs[0].get_data_type();
+    scale_t min_scale(IDEEP_DEF_SCALE);
+    if (dst_data_type != tensor::data_type::f32) {
+      min_scale[0] = std::numeric_limits<float>::max();
+      for (auto i : inputs) {
+        if (i.get_data_type() != dst_data_type) {
+          min_scale = IDEEP_DEF_SCALE;
+          dst_data_type = tensor::data_type::f32;
+          break;
+        }
+        if (i.has_scale() && (min_scale[0] > i.get_scale()[0])) {
+          IDEEP_ENFORCE(i.get_scale().size() == 1, "incorrect scale size");
+          min_scale[0] = i.get_scale()[0];
+        }
+      }
+    }
 
-    // tdims_t offset_dims(dst_dims.size(), 0);
-    // if (add_axis)
-    //   dst.reinit(dst_dims, dst_data_type);
-    // else
-    //   dst.reinit(dst_dims, dst_data_type, dst_format);
-    // if (dst_data_type != tensor::data_type::f32) dst.set_scale(min_scale);
+    tdims_t offset_dims(dst_dims.size(), 0);
+    if (add_axis)
+      dst.reinit(dst_dims, dst_data_type);
+    if (dst_data_type != tensor::data_type::f32)
+      dst.set_scale(min_scale);
 
-    // scale_t scales(1);
-    // // FIXME: To avoid view issue in dnnl
-    // // NOTE: In dnnl concat, dim 3 and 6+ are not supported.
-    // // Morewhile, the tensor shape must be blockable to create a view.
+    scale_t scales(1);
+    // FIXME: To avoid view issue in dnnl
+    // NOTE: In dnnl concat, dim 3 and 6+ are not supported.
+    // Morewhile, the tensor shape must be blockable to create a view.
     // if (!add_axis && dst_dims.size() != 3 && dst_dims.size() < 6) {
     //   for (unsigned k = 0; k < inputs.size(); k++) {
     //     if (!inputs[k].is_limited_blockable()) {
@@ -98,9 +97,7 @@ struct concat : public dnnl::concat {
     //         if (inputs[i].get_data_type() != dst_data_type ||
     //             input_scale - min_scale[0] != 0) {
     //           scales[0] = min_scale[0] / input_scale;
-    //           tensor input_fp = inputs[i];
-    //           input_fp.reinit(inputs[i].get_dims(), dst_data_type,
-    //                           inputs[i].get_internal_format());
+    //           tensor input_fp(inputs[i].get_desc().to_type(dst_data_type));
     //           inputs[i].reorder_to(input_fp, {0, scales});
     //           inputs[i] = input_fp;
     //         }
@@ -111,24 +108,23 @@ struct concat : public dnnl::concat {
     //   }
     // }
 
-    // for (unsigned i = 0; i < inputs.size(); ++i) {
-    //   scales[0] = min_scale[0] /
-    //               (inputs[i].has_scale() ? inputs[i].get_scale()[0] : 1.0f);
-    //   if (add_axis) {
-    //     tdims_t in_dims(inputs[i].get_dims());
-    //     in_dims.insert(in_dims.begin() + axis, 1);
-    //     tensor::desc in_desc(inputs[i].get_descriptor().reshape(in_dims));
-    //     treorder_t::compute({in_desc, inputs[i].get_data_handle()}, in_dims,
-    //                         offset_dims, dst, {0, scales});
-    //   } else {
-    //     treorder_t::compute(inputs[i], inputs[i].get_dims(), offset_dims, dst,
-    //                         {0, scales});
-    //   }
-    //   offset_dims[axis] += axis_info[i];
-    // }
+    for (unsigned i = 0; i < inputs.size(); ++i) {
+      scales[0] = min_scale[0] /
+                  (inputs[i].has_scale() ? inputs[i].get_scale()[0] : 1.0f);
+      if (add_axis) {
+        tdims_t in_dims(inputs[i].get_dims());
+        in_dims.insert(in_dims.begin() + axis, 1);
+        tensor in_mask {inputs[i].get_desc().reshape(in_dims),
+                        inputs[i].get_data_handle()};
+        in_mask.insert_submemory(dst, in_dims, offset_dims, {0, scales});
+      } else {
+        auto in_dims = inputs[i].get_dims();
+        inputs[i].insert_submemory(dst, in_dims, offset_dims, {0, scales});
+      }
+      offset_dims[axis] += axis_info[i];
+    }
 
-    // return axis_info;
-    return {0};
+    return axis_info;
   }
 };
 

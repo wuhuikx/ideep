@@ -254,11 +254,35 @@ class tensor : public dnnl::memory {
       return ret;
     }
 
-    // bool is_grouped() const { 
-    //   std::cout << (bool)data.extra.reserved[63] << std::endl;
-    //   return data.extra.reserved[63]; }
+    // std::string __infer_format_tag() const {
+    //   const auto &blk = blocking_desc();
 
-    // bool set_grouped(bool grouped) { data.extra.reserved[63] = grouped; }
+    //   dims_t blocks;
+    //   md.compute_blocks(blocks);
+
+    //   char dim_chars[DNNL_MAX_NDIMS + 1];
+
+    //   bool plain = true;
+    //   for (int d = 0; d < md.ndims(); ++d) {
+    //       dim_chars[d] = (blocks[d] == 1 ? 'a' : 'A') + (char)d;
+    //       if (blocks[d] != 1) plain = false;
+    //   }
+
+    //   dims_t strides;
+    //   utils::array_copy(strides, blk.strides, md.ndims());
+    //   utils::simultaneous_sort(strides, dim_chars, md.ndims(),
+    //           [](dim_t a, dim_t b) { return b - a; });
+
+    //   dim_chars[md.ndims()] = '\0';
+    //   DPRINT("%s", dim_chars);
+
+    //   if (!plain) {
+    //       for (int iblk = 0; iblk < blk.inner_nblks; ++iblk) {
+    //           DPRINT("%d%c", (int)blk.inner_blks[iblk],
+    //                   'a' + (char)blk.inner_idxs[iblk]);
+    //       }
+    //   }
+    // }
   };
 
   desc get_desc() const {
@@ -558,12 +582,28 @@ class tensor : public dnnl::memory {
     feed_from({adims, adata_type, const_cast<void *>(array)});
   }
 
-  // data copy
-  tensor extract_submemory(const dims &adims, const dims &offsets) const {
+  // reorder src to part of this tensor
+  // XPZ: for caffe2 concat. correctness?
+  void insert_submemory(const tensor &src, const dims &adims,
+                        const dims &offsets, const attr_t &attr = attr_t()) {
     auto view = get_desc().submemory_desc(adims, offsets);
-    tensor dst {adims, get_data_type()};
-    dnnl::reorder({get_engine(), view, get_engine(), dst.get_desc()})
+    dnnl::reorder({src.get_engine(), src.get_desc(), get_engine(), view, attr})
+        .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
+  }
+
+  // reorder part of this tensor to dst
+  void extract_submemory(tensor &dst, const dims &adims, const dims &offsets,
+                         const attr_t &attr = attr_t()) const {
+    auto view = get_desc().submemory_desc(adims, offsets);
+    dnnl::reorder({get_engine(), view, dst.get_engine(), dst.get_desc(), attr})
         .execute(stream::default_stream(), const_cast<tensor &>(*this), dst);
+  }
+
+  // simple api for extract_submemory
+  tensor extract_submemory(const dims &adims, const dims &offsets,
+                           const attr_t &attr = attr_t()) const {
+    tensor dst{adims, get_data_type(), get_engine()};
+    extract_submemory(dst, adims, offsets, attr);
     return dst;
   }
 
