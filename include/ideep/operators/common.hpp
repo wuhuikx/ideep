@@ -9,6 +9,7 @@ namespace ideep {
 
 using tdims_t = tensor::dims;
 using tdim_t = tensor::dim;
+using exec_args = std::unordered_map<int, dnnl::memory>;
 
 }  // namespace ideep
 
