@@ -4,13 +4,51 @@
 namespace ideep {
 
 struct channel_shuffle_forward: public dnnl::shuffle_forward {
-  static void compute(const tensor& src, tensor& dst, const int group, const int axis = 1,
-      prop_kind aprop_kind = prop_kind::forward) {
+
+  using super = dnnl::shuffle_forward;
+
+  // TODO: XPZ: correctness?
+  static void compute(const tensor& src,
+                      tensor& dst,
+                      const int group,
+                      const int axis = 1,
+                      prop_kind aprop_kind = prop_kind::forward,
+                      const engine& aengine = engine::cpu_engine()) {
+    IDEEP_ENFORCE(src.get_dim(axis) % group == 0, "Invalid channel and group");
+    IDEEP_ENFORCE(src.get_data_type() == data_type::f32, "invalid data type");
+
+    auto group_size = src.get_dim(axis) / group;
+    auto pd =
+        primitive_desc({aprop_kind, src.get_desc(), axis, group_size}, aengine);
+
+    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    dst.reinit_if_necessary(pd.dst_desc());
+
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}});
   }
 };
 
 struct channel_shuffle_backward : public dnnl::shuffle_backward {
-  static void compute(const tensor& grady, tensor& gradx, const int group, const int axis = 1) {
+
+  using super = dnnl::shuffle_backward;
+
+  // TODO: XPZ: correctness?
+  static void compute(const tensor& diff_dst,
+                      tensor& diff_src,
+                      const int group,
+                      const int axis = 1,
+                      const engine& aengine = engine::cpu_engine()) {
+    auto group_size = diff_dst.get_dim(axis) / group;
+    auto forward_hints = dnnl::shuffle_forward::primitive_desc(
+        {prop_kind::forward, diff_src.get_desc(), group_size, axis}, aengine);
+    auto pd = primitive_desc({diff_dst.get_desc(), axis, group_size}, aengine,
+                             forward_hints);
+    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+    diff_src.reinit_if_necessary(pd.diff_src_desc());
+    super(pd).execute(stream::default_stream(),
+                      {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                       {DNNL_ARG_DIFF_SRC, diff_src}});
   }
 };
 
