@@ -64,7 +64,7 @@ struct inner_product_backward_data : public dnnl::inner_product_backward_data {
   using super = dnnl::inner_product_backward_data;
   static void compute(const tensor& diff_dst,
                       const tensor& weights,
-                      const tdims_t& diff_src_dims,
+                      const dims& diff_src_dims,
                       tensor& diff_src,
                       const engine& aengine = engine::cpu_engine()) {
     tensor::desc diff_src_desc = tensor::desc(diff_src_dims, diff_dst.get_data_type());

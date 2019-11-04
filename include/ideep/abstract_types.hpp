@@ -75,15 +75,17 @@ public:
 
 using scale_t = std::vector<float>;
 
-using format_tag = dnnl::memory::format_tag;
+using memory = dnnl::memory;
+using format_tag = memory::format_tag;
+using data_type = memory::data_type;
+using dims = memory::dims;
+using dim = memory::dim;
 using query = dnnl::query;
 using kind = dnnl::primitive::kind;
 using prop_kind = dnnl::prop_kind;
 using algorithm = dnnl::algorithm;
 using batch_normalization_flag = dnnl::normalization_flags;
 using query = dnnl::query;
-using data_type = dnnl::memory::data_type;
-
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
 #define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
@@ -94,11 +96,11 @@ const scale_t IDEEP_DEF_SCALE {1.0f};
 constexpr int IDEEP_U8_MAX = 0xFF;
 constexpr int IDEEP_S8_MAX = 0x7F;
 constexpr int IDEEP_S32_MAX = 0x7FFFFFFF;
-const std::map<dnnl::memory::data_type, int> dt_max_map
+const std::map<data_type, int> dt_max_map
 {
-  {dnnl::memory::data_type::s32, IDEEP_S32_MAX},
-  {dnnl::memory::data_type::s8, IDEEP_S8_MAX},
-  {dnnl::memory::data_type::u8, IDEEP_U8_MAX}
+  {data_type::s32, IDEEP_S32_MAX},
+  {data_type::s8, IDEEP_S8_MAX},
+  {data_type::u8, IDEEP_U8_MAX}
 };
 
 enum lowp_kind {

@@ -12,14 +12,14 @@ struct sum : public dnnl::sum {
                       tensor& output,
                       const engine& aengine = engine::cpu_engine()) {
     auto input_descs = utils::fmap(inputs, [](const tensor& t) {
-      // "upcast" vector<tensor::desc> to vector<dnnl::memory::desc>
-      return static_cast<dnnl::memory::desc>(t.get_desc());
+      // "upcast" vector<tensor::desc> to vector<memory::desc>
+      return static_cast<memory::desc>(t.get_desc());
     });
     auto pd = primitive_desc(scales, input_descs, aengine);
 
     output.reinit_if_necessary(pd.dst_desc());
 
-    std::unordered_map<int, dnnl::memory> args {{DNNL_ARG_DST, output}};
+    exec_args args {{DNNL_ARG_DST, output}};
     for (int i = 0; i < inputs.size(); ++i) {
       args.insert({DNNL_ARG_MULTIPLE_SRC + i, inputs[i]});
     }

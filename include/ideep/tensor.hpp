@@ -14,29 +14,29 @@
 
 namespace ideep {
 
-class tensor : public dnnl::memory {
+class tensor : public memory {
  public:
-  using dims = dnnl::memory::dims;
+  using dims = memory::dims;
   using dim_t = dims::value_type;
   using dims_t = dnnl_dims_t;
   using format_kind_t = dnnl_format_kind_t;
   using blocking_desc_t = dnnl_blocking_desc_t;
 
-  struct desc : public dnnl::memory::desc {
-    desc() : dnnl::memory::desc(){};
+  struct desc : public memory::desc {
+    desc() : memory::desc(){};
 
-    desc(const dnnl::memory::desc &adesc) : dnnl::memory::desc(adesc.data) {};
+    desc(const memory::desc &adesc) : memory::desc(adesc.data) {};
 
-    desc(const dnnl_memory_desc_t &adata) : dnnl::memory::desc(adata) {};
+    desc(const dnnl_memory_desc_t &adata) : memory::desc(adata) {};
 
     desc(const dims &adims, data_type adata_type, format_tag aformat_tag)
-        : dnnl::memory::desc(adims, adata_type, aformat_tag) {}
+        : memory::desc(adims, adata_type, aformat_tag) {}
 
     desc(const dims &adims, data_type adata_type)
-        : dnnl::memory::desc(adims, adata_type, get_default_format(adims)) {}
+        : memory::desc(adims, adata_type, get_default_format(adims)) {}
 
     desc(const dims &adims, data_type adata_type, const dims &astrides)
-        : dnnl::memory::desc(adims, adata_type, astrides) {}
+        : memory::desc(adims, adata_type, astrides) {}
 
     /// Returns number of dimensions
     inline int ndims() const { return data.ndims; }
@@ -129,18 +129,18 @@ class tensor : public dnnl::memory {
           format_kind() == dnnl_format_kind_any)
         return false;
 
-      auto type_to_size = [](data_type data_type) {
-        switch (data_type) {
-          case dnnl::memory::data_type::f16:
-          case dnnl::memory::data_type::bf16:
+      auto type_to_size = [](data_type adata_type) {
+        switch (adata_type) {
+          case data_type::f16:
+          case data_type::bf16:
             return 2;
-          case dnnl::memory::data_type::f32:
-          case dnnl::memory::data_type::s32:
+          case data_type::f32:
+          case data_type::s32:
             return 4;
-          case dnnl::memory::data_type::s8:
-          case dnnl::memory::data_type::u8:
+          case data_type::s8:
+          case data_type::u8:
             return 1;
-          case dnnl::memory::data_type::undef:
+          case data_type::undef:
           default:
             IDEEP_ENFORCE(0, "unknown data type");
         }
@@ -302,7 +302,7 @@ class tensor : public dnnl::memory {
 
   // Constructs an tensor with no buffer and zero memory description
   tensor()
-      : dnnl::memory({dims(0), data_type::undef, format_tag::undef},
+      : memory({dims(0), data_type::undef, format_tag::undef},
                      engine::cpu_engine(), nullptr) {}
 
   /// Constructs a tensor.
@@ -310,7 +310,7 @@ class tensor : public dnnl::memory {
   /// @param desc tensor descriptor.
   /// @param aengine Engine.
   /// @param ahandle handle.
-  tensor(const dnnl::memory::desc &adesc, void *ahandle,
+  tensor(const memory::desc &adesc, void *ahandle,
          const dnnl::engine &aengine = engine::cpu_engine()) {
     reinit(adesc, ahandle, aengine);
   }
@@ -319,7 +319,7 @@ class tensor : public dnnl::memory {
   ///
   /// @param desc tensor descriptor.
   /// @param aengine Engine.
-  tensor(const dnnl::memory::desc &adesc,
+  tensor(const memory::desc &adesc,
          const dnnl::engine &aengine = engine::cpu_engine()) {
     reinit(adesc, aengine);
   }
@@ -351,7 +351,7 @@ class tensor : public dnnl::memory {
   }
 
   /// Function that refill tensor with new description. Specifiy extra buffer.
-  void reinit(const dnnl::memory::desc &adesc, void *ahandle,
+  void reinit(const memory::desc &adesc, void *ahandle,
               const dnnl::engine &aengine = engine::cpu_engine()) {
     buffer_.reset();
     scale_.reset();
@@ -364,7 +364,7 @@ class tensor : public dnnl::memory {
   }
 
   /// Function that refill tensor with new description or buffer
-  void reinit(const dnnl::memory::desc &adesc,
+  void reinit(const memory::desc &adesc,
               const dnnl::engine &aengine = engine::cpu_engine()) {
     // XPZ: TODO: use engine allocator
     buffer_.reset(utils::allocator::malloc(adesc.get_size()),
@@ -411,14 +411,14 @@ class tensor : public dnnl::memory {
     reinit(t.get_desc(), ahandle, t.get_engine());
   }
 
-  void reinit_if_necessary(const dnnl::memory::desc &expected_desc) {
+  void reinit_if_necessary(const memory::desc &expected_desc) {
     if (expected_desc != get_desc() || !get_data_handle()) {
       reinit(expected_desc, get_engine());
     }
   }
 
   /// Copy constructor
-  tensor(const tensor &t) : dnnl::memory(t) {
+  tensor(const tensor &t) : memory(t) {
     // std::cout << "tensor copy ctor" << std::endl;
     buffer_ = t.buffer_;
     scale_ = t.scale_;
@@ -426,7 +426,7 @@ class tensor : public dnnl::memory {
   }
 
   /// Move constructor
-  tensor(tensor &&t) : dnnl::memory(std::move(t)) {
+  tensor(tensor &&t) : memory(std::move(t)) {
     // std::cout << "tensor move ctor" << std::endl;
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
@@ -436,7 +436,7 @@ class tensor : public dnnl::memory {
   /// Assignment operator
   tensor &operator=(const tensor &t) {
     // std::cout << "tensor copy assign" << std::endl;
-    dnnl::memory::operator=(t);
+    memory::operator=(t);
     buffer_ = t.buffer_;
     scale_ = t.scale_;
     workspace_ = t.workspace_;
@@ -446,7 +446,7 @@ class tensor : public dnnl::memory {
   /// Move assignment operator
   tensor &operator=(tensor &&t) {
     // std::cout << "tensor move assign" << std::endl;
-    dnnl::memory::operator=(std::move(t));
+    memory::operator=(std::move(t));
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
@@ -508,7 +508,7 @@ class tensor : public dnnl::memory {
     std::cout << std::endl;
   }
 
-  tensor reorder_if_necessary(const dnnl::memory::desc &expected_desc) const {
+  tensor reorder_if_necessary(const memory::desc &expected_desc) const {
     if (expected_desc == get_desc()) {
       return *this;
     } else {
@@ -617,7 +617,7 @@ class tensor : public dnnl::memory {
                                               mask_dst);
   }
 
-  void init_workspace(const dnnl::memory::desc &desc) {
+  void init_workspace(const memory::desc &desc) {
     auto workspace = new tensor(desc, get_engine());
     workspace_.reset(workspace);
   }
@@ -733,9 +733,9 @@ class tensor : public dnnl::memory {
 // class param: public c_wrapper<dnnl_primitive_t> {
 // public:
 //   using super = c_wrapper<dnnl_primitive_t>;
-//   using dims = dnnl::memory::dims;
+//   using dims = memory::dims;
 //   using dim_t = dims::value_type;
-//   using data_type = dnnl::memory::data_type;
+//   using data_type = data_type;
 
 //   /// Param descriptor class wrappers DNNL memory primitive descriptor
 //   /// and provides utilities to manipulate underlying object
@@ -819,7 +819,7 @@ class tensor : public dnnl::memory {
 //     initialization. descriptor(const dims& adims, data_type adata_type,
 //     format aformat)
 //       :c_wrapper([&adims, adata_type, aformat]() {
-//         dnnl::memory::validate_dims(adims);
+//         memory::validate_dims(adims);
 
 //         // XXX: out of range enum might result unspecified behavior
 //         dnnl_memory_desc_t data;

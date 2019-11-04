@@ -11,12 +11,12 @@ struct convolution_forward : public dnnl::convolution_forward {
   static void compute(const tensor& src,
                       const tensor& weights,
                       const tensor& bias,
-                      const tdims_t& output_sizes,
+                      const dims& output_sizes,
                       tensor& dst,
-                      const tdims_t& strides,
-                      const tdims_t& dilates,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& dilates,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       int groups,
                       const attr_t& attr = attr_t(),
                       algorithm aalgorithm = algorithm::convolution_direct,
@@ -30,12 +30,12 @@ struct convolution_forward : public dnnl::convolution_forward {
   // fp32 w/o bias
   static void compute(const tensor& src,
                       const tensor& weights,
-                      const tdims_t& output_sizes,
+                      const dims& output_sizes,
                       tensor& dst,
-                      const tdims_t& strides,
-                      const tdims_t& dilates,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& dilates,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       int groups,
                       const attr_t& attr = attr_t(),
                       algorithm aalgorithm = algorithm::convolution_direct,
@@ -48,18 +48,18 @@ struct convolution_forward : public dnnl::convolution_forward {
   }
 
   // TODO: XPZ: refactor it
-  static dnnl::memory::desc expected_weights_desc(
-      const tdims_t& weights_dims,
-      tensor::data_type dtype = tensor::data_type::f32,
-      const tdims_t& strides = {1, 1},
-      const tdims_t& padding_l = {0, 0},
-      const tdims_t& padding_r = {0, 0},
-      const tdims_t& dilates = {0, 0},
+  static memory::desc expected_weights_desc(
+      const dims& weights_dims,
+      data_type dtype = data_type::f32,
+      const dims& strides = {1, 1},
+      const dims& padding_l = {0, 0},
+      const dims& padding_r = {0, 0},
+      const dims& dilates = {0, 0},
       int groups = 1,
       algorithm aalgorithm = algorithm::convolution_direct,
       prop_kind aprop_kind = prop_kind::forward,
-      tensor::data_type x_dtype = tensor::data_type::f32,
-      const tdims_t& src_dims = tdims_t()) {
+      data_type x_dtype = data_type::f32,
+      const dims& src_dims = dims()) {
 
     auto grouped = groups > 1;
     auto weights_desc_usr = tensor::desc(weights_dims, dtype, format_tag::oihw);
@@ -93,10 +93,10 @@ struct convolution_forward : public dnnl::convolution_forward {
     auto oh = (h - ((kh - 1) * (dilates_[0] + 1) + 1) + (padding_l[0] + padding_r[0])) / strides[0] + 1;
     auto ow = (w - ((kw - 1) * (dilates_[1] + 1) + 1) + (padding_l[1] + padding_r[1])) / strides[1] + 1;
 
-    tdims_t x_dims = { mb, ic, h, w };
-    tdims_t y_dims = { mb, oc, oh, ow };
+    dims x_dims = { mb, ic, h, w };
+    dims y_dims = { mb, oc, oh, ow };
     auto y_dtype =
-        dtype != tensor::data_type::s8 ? dtype : tensor::data_type::s32;
+        dtype != data_type::s8 ? dtype : data_type::s32;
     tensor::desc src_desc(x_dims, x_dtype, format_tag::nchw);
     tensor::desc dst_desc(y_dims, y_dtype, format_tag::nchw);
 
@@ -130,10 +130,10 @@ struct convolution_forward : public dnnl::convolution_forward {
       const tensor::desc& weights_desc,
       const tensor::desc& bias_desc,
       const tensor::desc& dst_desc,
-      const tdims_t& strides,
-      const tdims_t& dilates,
-      const tdims_t& padding_l,
-      const tdims_t& padding_r,
+      const dims& strides,
+      const dims& dilates,
+      const dims& padding_l,
+      const dims& padding_r,
       int groups,
       const attr_t& attr = attr_t(),
       algorithm aalgorithm = algorithm::convolution_direct,
@@ -167,10 +167,10 @@ private:
                            const tensor& weights,
                            const tensor& bias,
                            tensor& dst,
-                           const tdims_t& strides,
-                           const tdims_t& dilates,
-                           const tdims_t& padding_l,
-                           const tdims_t& padding_r,
+                           const dims& strides,
+                           const dims& dilates,
+                           const dims& padding_l,
+                           const dims& padding_r,
                            int groups,
                            const attr_t& attr,
                            algorithm aalgorithm,
@@ -204,19 +204,19 @@ private:
     }
   }
 
-  inline static tdims_t infer_output_size(const tensor::desc& input_desc,
+  inline static dims infer_output_size(const tensor::desc& input_desc,
                                           const tensor::desc& weights_desc,
-                                          const tdims_t& padding_l,
-                                          const tdims_t& padding_r,
-                                          const tdims_t& strides,
-                                          const tdims_t& dilates) {
+                                          const dims& padding_l,
+                                          const dims& padding_r,
+                                          const dims& strides,
+                                          const dims& dilates) {
     // XPZ: TODO: Assert format. Assume NCHW
     auto input_size = input_desc.get_dims();
     auto kernel_size = weights_desc.get_dims();
     auto with_groups = kernel_size.size() == (input_size.size() + 1);
 
     auto dim = input_size.size();
-    tdims_t output_size(dim);
+    dims output_size(dim);
     output_size[0] = input_size[0];
     output_size[1] = kernel_size[0] * (with_groups ? kernel_size[1] : 1);
     for (size_t d = 2; d < dim; ++d) {
@@ -240,12 +240,12 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
 
   static void compute(const tensor& diff_dst,
                       const tensor& weights,
-                      const tdims_t& diff_src_dims,
+                      const dims& diff_src_dims,
                       tensor& diff_src,
-                      const tdims_t& strides,
-                      const tdims_t& dilates,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& dilates,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       const int groups,
                       algorithm aalgorithm = algorithm::convolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
@@ -287,13 +287,13 @@ struct convolution_backward_weights
 
   static void compute(const tensor& src,
                       const tensor& diff_dst,
-                      const tdims_t& diff_weights_dims,
+                      const dims& diff_weights_dims,
                       tensor& diff_weights,
                       tensor& diff_bias,
-                      const tdims_t& strides,
-                      const tdims_t& dilates,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& dilates,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       const int groups,
                       algorithm aalgorithm = algorithm::convolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
@@ -304,12 +304,12 @@ struct convolution_backward_weights
 
   static void compute(const tensor& src,
                       const tensor& diff_dst,
-                      const tdims_t& diff_weights_dims,
+                      const dims& diff_weights_dims,
                       tensor& diff_weights,
-                      const tdims_t& strides,
-                      const tdims_t& dilates,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& dilates,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       const int groups,
                       algorithm aalgorithm = algorithm::convolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
@@ -323,13 +323,13 @@ struct convolution_backward_weights
   template <bool with_diff_bias>
   static void compute_impl(const tensor& src,
                            const tensor& diff_dst,
-                           const tdims_t& diff_weights_dims,
+                           const dims& diff_weights_dims,
                            tensor& diff_weights,
                            tensor& diff_bias,
-                           const tdims_t& strides,
-                           const tdims_t& dilates,
-                           const tdims_t& padding_l,
-                           const tdims_t& padding_r,
+                           const dims& strides,
+                           const dims& dilates,
+                           const dims& padding_l,
+                           const dims& padding_r,
                            const int groups,
                            algorithm aalgorithm,
                            const engine& aengine) {

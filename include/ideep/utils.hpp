@@ -140,7 +140,7 @@ static void bernoulli_generate(const long n, const double p, int* r) {
 #endif
 }
 
-static inline dnnl::memory::dims get_compatible_dilates(const dnnl::memory::dims& dilates) {
+static inline memory::dims get_compatible_dilates(const memory::dims& dilates) {
     if (!dilates.empty() && !IDEEP_STD_ANY_LE(dilates, 0)) {
       auto dilates_in = dilates;
       IDEEP_STD_EACH_SUB(dilates_in, 1);
@@ -152,7 +152,7 @@ static inline dnnl::memory::dims get_compatible_dilates(const dnnl::memory::dims
 static void inline validate_dims() {}
 
 template<typename... Ts>
-static void inline validate_dims(const dnnl::memory::dims& dims, Ts&... rest) {
+static void inline validate_dims(const memory::dims& dims, Ts&... rest) {
 #ifndef NDEBUG
   if (dims.size() > DNNL_MAX_NDIMS) {
     error::wrap_c_api(dnnl_invalid_arguments, "Invalid dimesions");

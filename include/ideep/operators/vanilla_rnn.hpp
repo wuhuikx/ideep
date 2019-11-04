@@ -6,8 +6,8 @@ namespace ideep {
 struct rnn_forward : public dnnl::vanilla_rnn_forward {
   static void compute(const tensor& src_layer, const tensor& src_iter,
       const tensor& weights_layer, const tensor& weights_iter, const tensor& bias,
-      const tdims_t& dst_layer_dims, tensor& dst_layer,
-      const tdims_t& dst_iter_dims, tensor& dst_iter,
+      const dims& dst_layer_dims, tensor& dst_layer,
+      const dims& dst_iter_dims, tensor& dst_iter,
       tensor& workspace, rnn_kind akind, dnnl_rnn_direction_t direction,
       prop_kind aprop_kind = prop_kind::forward_training) {
   }

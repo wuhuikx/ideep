@@ -12,8 +12,8 @@ struct concat : public dnnl::concat {
                       tensor& output,
                       const engine& aengine = engine::cpu_engine()) {
     auto input_descs = utils::fmap(inputs, [](const tensor& t) {
-      // "upcast" vector<tensor::desc> to vector<dnnl::memory::desc>
-      return static_cast<dnnl::memory::desc>(t.get_desc());
+      // "upcast" vector<tensor::desc> to vector<memory::desc>
+      return static_cast<memory::desc>(t.get_desc());
     });
 
     // XPZ: TODO: reorder to same format
@@ -22,7 +22,7 @@ struct concat : public dnnl::concat {
 
     output.reinit_if_necessary(pd.dst_desc());
 
-    std::unordered_map<int, dnnl::memory> args {{DNNL_ARG_DST, output}};
+    exec_args args {{DNNL_ARG_DST, output}};
     for (int i = 0; i < inputs.size(); ++i) {
       args.insert({DNNL_ARG_MULTIPLE_SRC + i, inputs[i]});
     }
@@ -55,7 +55,7 @@ struct concat : public dnnl::concat {
       dst_channels += axis_info[k];
     }
 
-    tdims_t dst_dims(inputs[0].get_dims());
+    dims dst_dims(inputs[0].get_dims());
     if (add_axis)
       dst_dims.insert(dst_dims.begin() + axis, dst_channels);
     else
@@ -63,12 +63,12 @@ struct concat : public dnnl::concat {
 
     auto dst_data_type = inputs[0].get_data_type();
     scale_t min_scale(IDEEP_DEF_SCALE);
-    if (dst_data_type != tensor::data_type::f32) {
+    if (dst_data_type != data_type::f32) {
       min_scale[0] = std::numeric_limits<float>::max();
       for (auto i : inputs) {
         if (i.get_data_type() != dst_data_type) {
           min_scale = IDEEP_DEF_SCALE;
-          dst_data_type = tensor::data_type::f32;
+          dst_data_type = data_type::f32;
           break;
         }
         if (i.has_scale() && (min_scale[0] > i.get_scale()[0])) {
@@ -78,10 +78,10 @@ struct concat : public dnnl::concat {
       }
     }
 
-    tdims_t offset_dims(dst_dims.size(), 0);
+    dims offset_dims(dst_dims.size(), 0);
     if (add_axis)
       dst.reinit(dst_dims, dst_data_type);
-    if (dst_data_type != tensor::data_type::f32)
+    if (dst_data_type != data_type::f32)
       dst.set_scale(min_scale);
 
     scale_t scales(1);
@@ -112,7 +112,7 @@ struct concat : public dnnl::concat {
       scales[0] = min_scale[0] /
                   (inputs[i].has_scale() ? inputs[i].get_scale()[0] : 1.0f);
       if (add_axis) {
-        tdims_t in_dims(inputs[i].get_dims());
+        dims in_dims(inputs[i].get_dims());
         in_dims.insert(in_dims.begin() + axis, 1);
         tensor in_mask {inputs[i].get_desc().reshape(in_dims),
                         inputs[i].get_data_handle()};

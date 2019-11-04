@@ -6,12 +6,12 @@ namespace ideep {
 struct pooling_forward : public dnnl::pooling_forward {
   using super = dnnl::pooling_forward;
   static void compute(const tensor& src,
-                      const tdims_t& output_sizes,
+                      const dims& output_sizes,
                       tensor& dst,
-                      const tdims_t& strides,
-                      const tdims_t& kernel,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& kernel,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       algorithm aalgorithm,
                       prop_kind aprop_kind = prop_kind::forward,
                       const engine& aengine = engine::cpu_engine()) {
@@ -19,7 +19,7 @@ struct pooling_forward : public dnnl::pooling_forward {
                           aalgorithm == dnnl::algorithm::pooling_max;
 
     auto src_desc = src.get_desc();
-    auto dst_desc = tensor::desc(output_sizes, tensor::data_type::f32);
+    auto dst_desc = tensor::desc(output_sizes, data_type::f32);
 
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,
@@ -36,16 +36,16 @@ struct pooling_forward : public dnnl::pooling_forward {
  }
 
 private:
-  // tdims_t infer_output_sizes(const tdims_t& input_size,
-  //                            const tdims_t& kernel_size,
-  //                            const tdims_t& stride,
-  //                            const tdims_t& padding_l,
-  //                            const tdims_t& padding_r,
-  //                            const tdims_t& dilation,
+  // dims infer_output_sizes(const dims& input_size,
+  //                            const dims& kernel_size,
+  //                            const dims& stride,
+  //                            const dims& padding_l,
+  //                            const dims& padding_r,
+  //                            const dims& dilation,
   //                            bool ceil_mode) {
 
   //   auto dim = input_size.size();
-  //   tdims_t output_size(dim);
+  //   dims output_size(dim);
   //   output_size[0] = input_size[0];
   //   output_size[1] = input_size[1];
   //   for (size_t i = 2; i < dim; ++i) {
@@ -70,10 +70,10 @@ struct pooling_backward : public dnnl::pooling_backward {
                       const tensor& dst,
                       const tensor& src,
                       tensor& diff_src,
-                      const tdims_t& strides,
-                      const tdims_t& kernel,
-                      const tdims_t& padding_l,
-                      const tdims_t& padding_r,
+                      const dims& strides,
+                      const dims& kernel,
+                      const dims& padding_l,
+                      const dims& padding_r,
                       algorithm aalgorithm,
                       const engine& aengine = engine::cpu_engine()) {
     auto src_desc = src.get_desc();
