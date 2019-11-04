@@ -11,7 +11,7 @@ struct convolution_forward : public dnnl::convolution_forward {
   static void compute(const tensor& src,
                       const tensor& weights,
                       const tensor& bias,
-                      const dims& output_sizes,
+                      const dims& dst_dims,
                       tensor& dst,
                       const dims& strides,
                       const dims& dilates,
@@ -23,14 +23,14 @@ struct convolution_forward : public dnnl::convolution_forward {
                       prop_kind aprop_kind = prop_kind::forward,
                       const engine& aengine = engine::cpu_engine()) {
     compute_impl</*with_bias=*/true>(
-        src, weights, bias, dst, strides, dilates, padding_l, padding_r,
-        groups, attr, aalgorithm, aprop_kind, aengine);
+        src, weights, bias, dst_dims, dst, strides, dilates,
+        padding_l, padding_r, groups, attr, aalgorithm, aprop_kind, aengine);
   }
 
   // fp32 w/o bias
   static void compute(const tensor& src,
                       const tensor& weights,
-                      const dims& output_sizes,
+                      const dims& dst_dims,
                       tensor& dst,
                       const dims& strides,
                       const dims& dilates,
@@ -43,8 +43,8 @@ struct convolution_forward : public dnnl::convolution_forward {
                       const engine& aengine = engine::cpu_engine()) {
     static tensor dummy_bias;
     compute_impl</*with_bias=*/false>(
-        src, weights, dummy_bias, dst, strides, dilates, padding_l, padding_r,
-        groups, attr, aalgorithm, aprop_kind, aengine);
+        src, weights, dummy_bias, dst_dims, dst, strides, dilates,
+        padding_l, padding_r, groups, attr, aalgorithm, aprop_kind, aengine);
   }
 
   // TODO: XPZ: refactor it
@@ -114,7 +114,7 @@ struct convolution_forward : public dnnl::convolution_forward {
 
     auto pd = get_primitive_desc</*with_bias=*/false>(
         src_desc, weights_desc, tensor::desc(), dst_desc, strides, dilates_,
-        padding_l, padding_r, groups, attr_t(), aalgorithm, apkind);
+        padding_l, padding_r, attr_t(), aalgorithm, apkind);
 
     if (!grouped) {
       return pd.weights_desc();
@@ -134,7 +134,6 @@ struct convolution_forward : public dnnl::convolution_forward {
       const dims& dilates,
       const dims& padding_l,
       const dims& padding_r,
-      int groups,
       const attr_t& attr = attr_t(),
       algorithm aalgorithm = algorithm::convolution_direct,
       prop_kind aprop_kind = prop_kind::forward,
@@ -142,11 +141,12 @@ struct convolution_forward : public dnnl::convolution_forward {
     auto src_desc_any = src_desc.to_format_any();
     auto weights_desc_any = weights_desc.to_format_any();
     auto bias_desc_any = with_bias ? bias_desc.to_format_any() : tensor::desc();
+    auto dst_desc_any = dst_desc.to_format_any();
 
-    auto output_size = infer_output_size(
-        src_desc_any, weights_desc_any, padding_l, padding_r, strides, dilates);
-    auto dst_desc_any = tensor::desc(
-        output_size, src_desc_any.get_data_type(), format_tag::any);
+    // auto output_size = infer_output_size(
+    //     src_desc_any, weights_desc_any, padding_l, padding_r, strides, dilates);
+    // auto dst_desc_any = tensor::desc(
+    //     output_size, src_desc_any.get_data_type(), format_tag::any);
 
     if (with_bias) {
       return primitive_desc({aprop_kind, aalgorithm, src_desc_any,
@@ -166,6 +166,7 @@ private:
   static void compute_impl(const tensor& src,
                            const tensor& weights,
                            const tensor& bias,
+                           const dims& dst_dims,
                            tensor& dst,
                            const dims& strides,
                            const dims& dilates,
@@ -181,9 +182,12 @@ private:
     auto weights_ = weights.make_grouped_weights(groups);
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
+    // TODO: XPZ: is it ok to use src type as dst type?
+    tensor::desc dst_desc(dst_dims, src.get_data_type());
+
     auto pd = get_primitive_desc<with_bias>(
-        src.get_desc(), weights_.get_desc(), bias.get_desc(), dst.get_desc(),
-        strides, dilates_, padding_l, padding_r, groups, attr, aalgorithm,
+        src.get_desc(), weights_.get_desc(), bias.get_desc(), dst_desc,
+        strides, dilates_, padding_l, padding_r, attr, aalgorithm,
         aprop_kind, aengine);
 
     auto expected_src = src.reorder_if_necessary(pd.src_desc());
@@ -204,33 +208,32 @@ private:
     }
   }
 
-  inline static dims infer_output_size(const tensor::desc& input_desc,
-                                          const tensor::desc& weights_desc,
-                                          const dims& padding_l,
-                                          const dims& padding_r,
-                                          const dims& strides,
-                                          const dims& dilates) {
-    // XPZ: TODO: Assert format. Assume NCHW
-    auto input_size = input_desc.get_dims();
-    auto kernel_size = weights_desc.get_dims();
-    auto with_groups = kernel_size.size() == (input_size.size() + 1);
+  // static dims infer_output_size(const tensor::desc& input_desc,
+  //                               const tensor::desc& weights_desc,
+  //                               const dims& padding_l,
+  //                               const dims& padding_r,
+  //                               const dims& strides,
+  //                               const dims& dilates) {
+  //   // XPZ: TODO: Assert format. Assume NCHW
+  //   auto input_size = input_desc.get_dims();
+  //   auto kernel_size = weights_desc.get_dims();
+  //   auto with_groups = kernel_size.size() == (input_size.size() + 1);
 
-    auto dim = input_size.size();
-    dims output_size(dim);
-    output_size[0] = input_size[0];
-    output_size[1] = kernel_size[0] * (with_groups ? kernel_size[1] : 1);
-    for (size_t d = 2; d < dim; ++d) {
-      auto src = input_size[d];
-      auto ker = kernel_size[with_groups + d];
-      auto str = strides[d - 2];
-      auto dil = dilates[d - 2];
-      auto pad_l = padding_l[d - 2];
-      auto pad_r = padding_r[d - 2];
-      auto ker_range = 1 + (ker - 1) * (dil + 1);
-      output_size[d] = (src + pad_l + pad_r - ker_range) / str + 1;
-    }
-    return output_size;
-  }
+  //   auto dim = input_size.size();
+  //   dims output_size(dim);
+  //   output_size[0] = input_size[0];
+  //   output_size[1] = kernel_size[0] * (with_groups ? kernel_size[1] : 1);
+  //   for (size_t d = 2; d < dim; ++d) {
+  //     auto src = input_size[d];
+  //     auto ker = kernel_size[with_groups + d];
+  //     auto str = strides[d - 2];
+  //     auto dil = dilates[d - 2];
+  //     auto pad = padding_l[d - 2] + padding_r[d - 2];
+  //     auto ker_range = 1 + (ker - 1) * (dil + 1);
+  //     output_size[d] = (src + pad - ker_range) / str + 1;
+  //   }
+  //   return output_size;
+  // }
 };
 
 
@@ -256,13 +259,12 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
     auto diff_dst_desc = diff_dst.get_desc().to_format_any();
     auto weights_desc = weights_.get_desc().to_format_any();
 
-    tensor::desc diff_src_desc = tensor::desc(
-        diff_src_dims, diff_dst_desc.get_data_type(), format_tag::any);
+    tensor::desc diff_src_desc(diff_src_dims, diff_dst_desc.get_data_type());
 
     auto forward_hints =
         convolution_forward::get_primitive_desc</*with_bias=*/false>(
             diff_src_desc, weights_desc, tensor::desc(), diff_dst_desc, strides,
-            dilates, padding_l, padding_r, groups);
+            dilates_, padding_l, padding_r);
 
     auto pd = primitive_desc(
         {aalgorithm, diff_src_desc, weights_desc, diff_dst_desc, strides,
@@ -351,7 +353,7 @@ struct convolution_backward_weights
     auto forward_hints =
         convolution_forward::get_primitive_desc<with_diff_bias>(
             src_desc, diff_weights_desc, diff_bias_desc, diff_dst_desc, strides,
-            dilates_, padding_l, padding_r, groups, attr_t(), aalgorithm,
+            dilates_, padding_l, padding_r, attr_t(), aalgorithm,
             prop_kind::forward, aengine);
 
     auto pd = with_diff_bias
