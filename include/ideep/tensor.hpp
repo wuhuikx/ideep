@@ -220,8 +220,7 @@ class tensor : public memory {
     }
 
     desc clone() const {
-      dnnl_memory_desc_t clone_data;
-      memcpy(&clone_data, &data, sizeof(dnnl_memory_desc_t));
+      dnnl_memory_desc_t clone_data = data;
       return desc(clone_data);
     }
 
@@ -238,9 +237,8 @@ class tensor : public memory {
       auto ndims = dims.size();
       dims.insert(dims.begin(), groups);
       dims[is_deconv + 1] /= groups;
-      auto ret = desc(dims, get_data_type(),
-                      ndims == 4 ? format_tag::goihw : format_tag::goidhw);
-      return ret;
+      return desc(dims, get_data_type(),
+                  ndims == 4 ? format_tag::goihw : format_tag::goidhw);
     }
 
     desc to_ungrouped(bool is_deconv = false) const {
@@ -249,9 +247,110 @@ class tensor : public memory {
       dims[is_deconv + 1] *= groups;
       dims.erase(dims.begin());
       auto ndims = dims.size();
-      auto ret = desc(dims, get_data_type(),
-                      ndims == 4 ? format_tag::oihw : format_tag::oidhw);
-      return ret;
+      return desc(dims, get_data_type(),
+                  ndims == 4 ? format_tag::oihw : format_tag::oidhw);
+    }
+
+    desc permute(const std::vector<int> &permute_axes = {}) const {
+      if (ndims() <= 1) {
+        return clone();
+      }
+
+      auto perms = permute_axes;
+      if (perms.empty()) {
+        perms.resize(ndims());
+        std::iota(perms.rbegin(), perms.rend(), 0);
+      } else {
+        IDEEP_ENFORCE(perms.size() == ndims(),
+                      "Axes should be size like source tensor.");
+        auto perms_sorted = perms;
+        std::sort(perms_sorted.begin(), perms_sorted.end());
+        for (auto i = 0; i < perms_sorted.size(); ++i) {
+          IDEEP_ENFORCE(perms_sorted[i] == i,
+                        "Axes should be a permutation of 0 to ndim.");
+        }
+        if (perms_sorted == perms) {
+          return clone();
+        }
+      }
+
+      // permute dims
+      auto src_dims = get_dims();
+      dims dst_dims(ndims());
+      for (int i = 0; i < ndims(); i++) {
+        dst_dims[i] = src_dims[perms[i]];
+      }
+
+      // permute strides
+      auto new_desc = to_dims(dst_dims);
+      auto& new_stride = new_desc.data.format_desc.blocking.strides;
+      auto& old_stride = data.format_desc.blocking.strides;
+      for (int i = 0; i < ndims(); i++) {
+        new_stride[i] = old_stride[perms[i]];
+      }
+      return new_desc;
+    }
+
+    desc transpose(dim dim0, dim dim1) const {
+      std::vector<int> axes(ndims());
+      std::iota(axes.begin(), axes.end(), 0);
+      std::swap(axes[dim0], axes[dim1]);
+      return permute(axes);
+    }
+
+    /** inits descriptor with logical dimensions adims and keep the current
+     * blocking structure
+     */
+    desc to_dims(const dims &adims) const {
+      IDEEP_ENFORCE(adims.size() == ndims(), "Rank mismatched.");
+
+      dnnl_memory_desc_t md;
+      md.ndims = data.ndims;
+      md.data_type = data.data_type;
+
+      auto& blk = blocking_desc();
+
+      dims_t blocks;
+      for (size_t i = 0; i < ndims(); i++)
+        blocks[i] = 1;
+
+      dim_t block_size = 1;
+      for (int iblk = 0; iblk < blk.inner_nblks; ++iblk) {
+        blocks[blk.inner_idxs[iblk]] *= blk.inner_blks[iblk];
+        block_size *= blk.inner_blks[iblk];
+      }
+
+      for (int d = 0; d < ndims(); ++d) {
+        md.dims[d] = adims[d];
+        md.padded_dims[d] = utils::rnd_up(adims[d], blocks[d]);
+        md.padded_offsets[d] = 0;
+      }
+      md.offset0 = 0;
+
+      md.format_kind = dnnl_blocked;
+      auto &mblk = md.format_desc.blocking;
+      mblk = blk;
+
+      for (size_t i = 0; i < ndims(); i++)
+        mblk.strides[i] = blk.strides[i];
+
+      int perm[DNNL_MAX_NDIMS];
+      for (int d = 0; d < ndims(); ++d)
+        perm[d] = d;
+
+      utils::simultaneous_sort(mblk.strides, perm, ndims(),
+                               [](dim_t a, dim_t b) { return b - a; });
+
+      dim_t stride = block_size;
+      for (int _d = ndims() - 1; _d >= 0; --_d) {
+        const int d = perm[_d];
+        md.format_desc.blocking.strides[d] = stride;
+        stride *= md.padded_dims[d] / blocks[d];
+      }
+
+      md.extra = dnnl_memory_extra_desc_t {};
+
+      return desc(md);
     }
 
     // std::string __infer_format_tag() const {
@@ -617,6 +716,13 @@ class tensor : public memory {
                                               mask_dst);
   }
 
+  // data copy
+  tensor clone() const {
+    tensor dst(get_desc());
+    this->reorder_to(dst);
+    return dst;
+  }
+
   void init_workspace(const memory::desc &desc) {
     auto workspace = new tensor(desc, get_engine());
     workspace_.reset(workspace);
@@ -643,58 +749,29 @@ class tensor : public memory {
     return (!is_public_format() || get_data_type() != data_type::f32);
   }
 
+  tensor permute_(const std::vector<int> &permute_axes = {}) {
+    set_desc(get_desc().permute(permute_axes));
+    return *this;
+  }
+
   tensor permute(const std::vector<int> &permute_axes = {}) const {
-    if (ndims() <= 1) {
-      return to_public();
-    }
-
-    auto axes = permute_axes;
-    if (axes.empty()) {
-      axes.resize(ndims());
-      std::iota(axes.rbegin(), axes.rend(), 0);
-    } else {
-      IDEEP_ENFORCE(static_cast<int>(axes.size()) == ndims(),
-                    "Axes should be size like source tensor.");
-      auto axes_sorted = axes;
-      std::sort(axes_sorted.begin(), axes_sorted.end());
-      for (auto i = 0; i < axes_sorted.size(); ++i) {
-        IDEEP_ENFORCE(static_cast<float>(axes_sorted[i]) == i,
-                      "Axes should be a permutation of 0 to ndim.");
-      }
-      if (axes_sorted == axes) {
-        return to_public();
-      }
-    }
-
-    auto src = is_public_format() ? *this : to_public();
-    auto src_dims = src.get_dims();
-    dims dst_dims(src_dims.size());
-    for (int i = 0; i < src_dims.size(); i++) {
-      dst_dims[i] = src_dims[axes[i]];
-    }
-
-    tensor dst {dst_dims, src.get_data_type()};
-    auto dst_stride = dst.get_desc().get_block_strides();
-    dims stride(dst_stride.size(), 1);
-    for (int i = stride.size() - 2; i >= 0; i--) {
-      stride[axes[i]] = dst_stride[i];
-    }
-
-    tensor mask_dst{{src.get_dims(), src.get_data_type(), stride},
-                    dst.get_data_handle()};
-    src.reorder_to(mask_dst);
-    if (src.has_scale()) {
-      dst.set_scale(src.get_scale());
-    }
-
-    return dst;
+    return clone().permute_(permute_axes);
   }
 
-  void transpose_from(const tensor &src, const std::vector<int> &axes = {}) {
-    *this = std::move(src.permute(axes));
+  tensor transpose_(dim dim0, dim dim1) {
+    set_desc(get_desc().transpose(dim0, dim1));
+    return *this;
   }
 
- protected:
+  tensor transpose(dim dim0, dim dim1) const {
+    return clone().transpose_(dim0, dim1);
+  }
+
+  void transpose_from(const tensor &src, const std::vector<int> &perms = {}) {
+    *this = std::move(src.permute(perms));
+  }
+
+ private:
   bool has_same_volume(const dims &new_dims) const {
     auto old_dims = get_dims();
     auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
