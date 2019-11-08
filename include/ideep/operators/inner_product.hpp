@@ -25,6 +25,26 @@ struct inner_product_forward : public dnnl::inner_product_forward {
     compute<false>(src, weights, dummy_bias, dst, aprop_kind, aengine);
   }
 
+
+  static memory::desc expected_weights_desc(const dims& weights_dims,
+                                            data_type dtype = data_type::f32,
+                                            data_type x_dtype = data_type::f32) {
+    // auto x_dims = weights_dims;
+    // x_dims[0] = 1;
+    // auto y_dims = {x_dims[0], weights_dims[0]};
+    // auto ndims = weights_dims.size();
+    // auto y_dtype = (dtype != tdtype_t::s8) ? dtype : tdtype_t::s32;
+
+    // IDEEP_ENFORCE(x_dims.size() == weights_dims.size(), "Invalid dims for data and weights");
+    // tdesc_t x_desc(x_dims, x_dtype, ndims == 2 ? format::nc : format::nchw);
+    // tdesc_t y_desc(y_dims, y_dtype, format::nc);
+    // tdesc_t weights_desc(weights_dims, dtype, ndims == 2 ? format::oi : format::oihw);
+
+    // inner_product_forward comp(x_desc, weights_desc, tdesc_t(), y_desc);
+    // return comp.dup_descriptor_of(query::weights_pd);
+    return tensor::desc();
+  }
+
 private:
   template <bool with_bias = true>
   static void compute_impl(const tensor& src,

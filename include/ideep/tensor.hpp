@@ -627,8 +627,7 @@ class tensor : public memory {
   /// is undefined
   /// XPZ: For caffe2
   void resize(const dims &adims, data_type adata_type) {
-    auto new_desc = get_desc().reshape(adims);
-    reinit(new_desc, get_engine());
+    reinit(adims, adata_type, get_engine());
   }
 
   /// Return an new tensor with new shape
@@ -738,9 +737,9 @@ class tensor : public memory {
 
   /// Need reorder if current param used by non DNNL routines.
   /// XPZ: TODO: will be removed
-  // inline bool need_reorder() const {
-  //   return (!is_public_format() || get_data_type() != data_type::f32);
-  // }
+  inline bool need_reorder() const {
+    return (!is_public_format() || get_data_type() != data_type::f32);
+  }
 
   tensor permute_(const std::vector<int> &permute_axes = {}) {
     set_desc(get_desc().permute(permute_axes));
