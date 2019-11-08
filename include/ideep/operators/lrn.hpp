@@ -21,7 +21,7 @@ struct lrn_forward : public dnnl::lrn_forward {
         {aprop_kind, aalgorithm, src_desc, local_size, alpha, beta, k},
         aengine);
 
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
     exec_args args = {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
@@ -61,7 +61,7 @@ struct lrn_backward : public dnnl::lrn_backward {
         {aalgorithm, src_desc, diff_dst.get_desc(), local_size, alpha, beta, k},
         aengine, forward_hints);
     
-    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
 
     exec_args args = {{DNNL_ARG_SRC, src},
@@ -70,7 +70,7 @@ struct lrn_backward : public dnnl::lrn_backward {
 
     if (dst.has_workspace()) {
       auto expected_workspace =
-          dst.get_workspace().reorder_if_necessary(pd.workspace_desc());
+          dst.get_workspace().reorder_if_differ_in(pd.workspace_desc());
       args.insert({DNNL_ARG_WORKSPACE, expected_workspace});
     }
     super(pd).execute(stream::default_stream(), args);

@@ -39,8 +39,8 @@ struct softmax_backward : public dnnl::softmax_backward {
     auto pd =
         primitive_desc({diff_dst.get_desc(), dst.get_desc(), softmax_axis},
                        aengine, forward_hints);
-    auto expected_dst = dst.reorder_if_necessary(pd.dst_desc());
-    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+    auto expected_dst = dst.reorder_if_differ_in(pd.dst_desc());
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
 
     super(pd).execute(stream::default_stream(),

@@ -28,7 +28,7 @@ struct batch_normalization_forward_inference
                 scale.get_data_handle(), scale.get_size());
     std::memcpy(scale_shift.get_data_handle() + scale.get_size(),
                 shift.get_data_handle(), shift.get_size());
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     dst.reinit_if_necessary(pd.dst_desc());
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, expected_src},
@@ -55,9 +55,9 @@ struct batch_normalization_forward_inference
                 scale.get_data_handle(), scale.get_size());
     std::memcpy(scale_shift.get_data_handle() + scale.get_size(),
                 shift.get_data_handle(), shift.get_size());
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
-    auto expected_mean = mean.reorder_if_necessary(pd.mean_desc());
-    auto expected_variance = variance.reorder_if_necessary(pd.variance_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    auto expected_mean = mean.reorder_if_differ_in(pd.mean_desc());
+    auto expected_variance = variance.reorder_if_differ_in(pd.variance_desc());
     dst.reinit_if_necessary(pd.dst_desc());
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, expected_src},
@@ -104,7 +104,7 @@ struct batch_normalization_forward_training
                 scale.get_data_handle(), scale.get_size());
     std::memcpy(scale_shift.get_data_handle() + scale.get_size(),
                 shift.get_data_handle(), shift.get_size());
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     mean.reinit_if_necessary(pd.mean_desc());
     variance.reinit_if_necessary(pd.variance_desc());
     dst.reinit_if_necessary(pd.dst_desc());
@@ -150,10 +150,10 @@ struct batch_normalization_backward
     auto diff_src_desc = diff_dst.get_desc();
     auto pd = primitive_desc(
         {prop_kind::backward, diff_src_desc, src_desc, epsilon, flags}, aengine, forward_hints);
-    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
-    auto expected_mean = mean.reorder_if_necessary(pd.mean_desc());
-    auto expected_variance = variance.reorder_if_necessary(pd.variance_desc());
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    auto expected_mean = mean.reorder_if_differ_in(pd.mean_desc());
+    auto expected_variance = variance.reorder_if_differ_in(pd.variance_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
     diff_scale_shift.reinit_if_necessary(pd.diff_weights_desc());
     super(pd).execute(stream::default_stream(),

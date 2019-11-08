@@ -185,8 +185,8 @@ private:
         strides, dilates_, padding_l, padding_r, attr, aalgorithm,
         aprop_kind, aengine);
 
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
-    auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
     if (with_bias) {
@@ -238,8 +238,8 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
         {aalgorithm, diff_src_desc, weights_desc, diff_dst_desc, strides,
          dilates_, padding_l, padding_r}, aengine, forward_hints);
 
-    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
-    auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
 
     super(pd).execute(stream::default_stream(), 
@@ -333,8 +333,8 @@ struct convolution_backward_weights
                           diff_dst_desc, strides, dilates_,
                           padding_l, padding_r}, aengine, forward_hints);
 
-    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     diff_weights.reinit_if_necessary(pd.diff_weights_desc());
 
     if (with_diff_bias) {

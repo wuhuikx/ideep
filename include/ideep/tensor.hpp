@@ -596,7 +596,7 @@ class tensor : public memory {
     std::cout << std::endl;
   }
 
-  tensor reorder_if_necessary(const memory::desc &expected_desc) const {
+  tensor reorder_if_differ_in(const memory::desc &expected_desc) const {
     if (expected_desc == get_desc()) {
       return *this;
     } else {

@@ -220,8 +220,8 @@ struct convolution_transpose_forward : public dnnl::deconvolution_forward {
         strides, dilates_, padding_l, padding_r, attr, aalgorithm,
         aprop_kind, aengine);
 
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
-    auto expected_weights = weights_.reorder_if_necessary(pd.weights_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
     if (with_bias) {

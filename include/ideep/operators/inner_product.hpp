@@ -60,11 +60,11 @@ private:
     auto pd = with_bias ? primitive_desc(
         {aprop_kind, src_desc, weights_desc, bias_desc, dst_desc}, aengine)
         : primitive_desc({aprop_kind, src_desc, weights_desc, dst_desc}, aengine);
-    auto expected_src = src.reorder_if_necessary(pd.src_desc());
-    auto expected_weights = weights.reorder_if_necessary(pd.weights_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    auto expected_weights = weights.reorder_if_differ_in(pd.weights_desc());
     dst.reinit_if_necessary(pd.dst_desc());
     if (with_bias){
-      auto expected_bias = bias.reorder_if_necessary(pd.bias_desc());
+      auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc());
       super(pd).execute(stream::default_stream(),
                         {{DNNL_ARG_SRC, expected_src},
                          {DNNL_ARG_WEIGHTS, expected_weights},
@@ -94,8 +94,8 @@ struct inner_product_backward_data : public dnnl::inner_product_backward_data {
         {prop_kind::forward, diff_src_desc, weights_desc, diff_dst_desc}, aengine);
     auto pd =primitive_desc(
         {diff_src_desc, weights_desc, diff_dst_desc}, aengine, forward_hints);
-    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
-    auto expected_weights = weights.reorder_if_necessary(pd.weights_desc());
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+    auto expected_weights = weights.reorder_if_differ_in(pd.weights_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_DIFF_DST, expected_diff_dst},
@@ -146,8 +146,8 @@ private:
       auto pd = with_diff_bias
           ? primitive_desc({src_desc, diff_weights_desc, diff_bias_desc, diff_dst_desc}, aengine, forward_hints)
           : primitive_desc({src_desc, diff_weights_desc, diff_dst_desc}, aengine, forward_hints);
-      auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
-      auto expected_src = src.reorder_if_necessary(pd.src_desc());
+      auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+      auto expected_src = src.reorder_if_differ_in(pd.src_desc());
       diff_weights.reinit_if_necessary(pd.diff_weights_desc());
       if (with_diff_bias) {
         diff_bias.reinit_if_necessary(pd.diff_bias_desc());
