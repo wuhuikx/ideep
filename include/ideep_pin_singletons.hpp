@@ -4,11 +4,6 @@
 #include "ideep.hpp"
 
 namespace ideep {
-/// Put these in only one library
-// engine &engine::cpu_engine() {
-//   static engine cpu_engine;
-//   return cpu_engine;
-// }
 
 engine& engine::cpu_engine() {
   static engine cpu_engine(kind::cpu, 0);
@@ -20,7 +15,13 @@ engine& engine::gpu_engine() {
   return gpu_engine;
 }
 
-
+struct RegisterEngineAllocator {
+  RegisterEngineAllocator(engine& eng,
+                          const std::function<void*(int)>& malloc,
+                          const std::function<void(void*)>& free) {
+    eng.set_allocator(malloc, free);
+  }
+};
 
 }
 

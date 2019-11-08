@@ -8,7 +8,6 @@
 #include <numeric>
 
 #include "abstract_types.hpp"
-#include "allocators.hpp"
 #include "attributes.hpp"
 #include "utils.hpp"
 
@@ -391,9 +390,10 @@ class tensor : public memory {
   desc dup_descriptor() const { return dup_desc(); }
 
   // Constructs an tensor with no buffer and zero memory description
-  tensor()
-      : memory({dims(0), data_type::undef, format_tag::undef},
-                     engine::cpu_engine(), nullptr) {}
+  tensor() {
+    reinit({dims(0), data_type::undef, format_tag::undef}, nullptr,
+           engine::cpu_engine());
+  }
 
   /// Constructs a tensor.
   ///
@@ -401,7 +401,7 @@ class tensor : public memory {
   /// @param aengine Engine.
   /// @param ahandle handle.
   tensor(const memory::desc &adesc, void *ahandle,
-         const dnnl::engine &aengine = engine::cpu_engine()) {
+         const engine &aengine = engine::cpu_engine()) {
     reinit(adesc, ahandle, aengine);
   }
 
@@ -410,7 +410,7 @@ class tensor : public memory {
   /// @param desc tensor descriptor.
   /// @param aengine Engine.
   tensor(const memory::desc &adesc,
-         const dnnl::engine &aengine = engine::cpu_engine()) {
+         const engine &aengine = engine::cpu_engine()) {
     reinit(adesc, aengine);
   }
 
@@ -418,33 +418,34 @@ class tensor : public memory {
 
   // format_tag, buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
-         void *ahandle, const dnnl::engine &aengine = engine::cpu_engine()) {
+         void *ahandle, const engine &aengine = engine::cpu_engine()) {
     reinit(adims, adata_type, aformat_tag, ahandle, aengine);
   }
 
   // format_tag, no buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
-         const dnnl::engine &aengine = engine::cpu_engine()) {
+         const engine &aengine = engine::cpu_engine()) {
     reinit(adims, adata_type, aformat_tag, aengine);
   }
 
   // no format_tag, buffer
   tensor(const dims &adims, data_type adata_type, void *ahandle,
-         const dnnl::engine &aengine = engine::cpu_engine()) {
+         const engine &aengine = engine::cpu_engine()) {
     reinit(adims, adata_type, ahandle, aengine);
   }
 
   // no format_tag, no buffer
   tensor(const dims &adims, data_type adata_type,
-         const dnnl::engine &aengine = engine::cpu_engine()) {
+         const engine &aengine = engine::cpu_engine()) {
     reinit(adims, adata_type, aengine);
   }
 
   /// Function that refill tensor with new description. Specifiy extra buffer.
   void reinit(const memory::desc &adesc, void *ahandle,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
+              const engine &aengine = engine::cpu_engine()) {
     buffer_.reset();
     scale_.reset();
+    eng_ = aengine;
 
     dnnl_memory_t result;
     error::wrap_c_api(
@@ -455,11 +456,10 @@ class tensor : public memory {
 
   /// Function that refill tensor with new description or buffer
   void reinit(const memory::desc &adesc,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
-    // XPZ: TODO: use engine allocator
-    buffer_.reset(utils::allocator::malloc(adesc.get_size()),
-                  utils::allocator::free);
+              const engine &aengine = engine::cpu_engine()) {
+    buffer_.reset(aengine.malloc(adesc.get_size()), aengine.free);
     scale_.reset();
+    eng_ = aengine;
 
     dnnl_memory_t result;
     error::wrap_c_api(
@@ -470,26 +470,25 @@ class tensor : public memory {
 
   // format_tag, buffer
   void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
-              void *ahandle,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
+              void *ahandle, const engine &aengine = engine::cpu_engine()) {
     reinit({adims, adata_type, aformat_tag}, ahandle, aengine);
   }
 
   // format_tag, no buffer
   void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
+              const engine &aengine = engine::cpu_engine()) {
     reinit({adims, adata_type, aformat_tag}, aengine);
   }
 
   // no format_tag, buffer
   void reinit(const dims &adims, data_type adata_type, void *ahandle,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
+              const engine &aengine = engine::cpu_engine()) {
     reinit({adims, adata_type, get_default_format(adims)}, ahandle, aengine);
   }
 
   // no format_tag, no buffer
   void reinit(const dims &adims, data_type adata_type,
-              const dnnl::engine &aengine = engine::cpu_engine()) {
+              const engine &aengine = engine::cpu_engine()) {
     reinit({adims, adata_type, get_default_format(adims)}, aengine);
   }
 
@@ -513,6 +512,7 @@ class tensor : public memory {
     buffer_ = t.buffer_;
     scale_ = t.scale_;
     workspace_ = t.workspace_;
+    eng_ = t.eng_;
   }
 
   /// Move constructor
@@ -521,6 +521,7 @@ class tensor : public memory {
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
+    eng_ = std::move(t.eng_);
   }
 
   /// Assignment operator
@@ -530,6 +531,7 @@ class tensor : public memory {
     buffer_ = t.buffer_;
     scale_ = t.scale_;
     workspace_ = t.workspace_;
+    eng_ = t.eng_;
     return *this;
   }
 
@@ -540,7 +542,13 @@ class tensor : public memory {
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
+    eng_ = std::move(t.eng_);
     return *this;
+  }
+
+  /// Returns the engine of the tensor
+  const engine& get_engine() const {
+    return eng_;
   }
 
   /// Returns number of dimensions
@@ -793,6 +801,7 @@ class tensor : public memory {
   std::shared_ptr<tensor> workspace_;
   std::shared_ptr<scale_t> scale_;
   std::shared_ptr<void> buffer_;
+  engine eng_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////

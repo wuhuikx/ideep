@@ -6,8 +6,10 @@
 #include <map>
 #include <vector>
 #include <cstdlib>
+#include <functional>
 #include <dnnl.h>
 #include <dnnl.hpp>
+#include "allocators.hpp"
 
 namespace ideep {
 
@@ -117,9 +119,7 @@ enum rnn_kind {
 
 /// cpu execution engine only.
 struct engine : public dnnl::engine {
-  // explicit engine(const dnnl_engine_t& aengine) = delete;
-  // engine(engine const&) = delete;
-  // void operator =(engine const&) = delete;
+  friend class tensor;
 
   /// Singleton CPU engine for all primitives
   static IDEEP_EXPORT engine& cpu_engine();
@@ -127,10 +127,20 @@ struct engine : public dnnl::engine {
   /// Singleton GPU engine for all primitives
   static IDEEP_EXPORT engine& gpu_engine();
 
-// private:
   engine(kind akind = kind::cpu, size_t index = 0)
-    : dnnl::engine(akind, index) {
+      : dnnl::engine(akind, index),
+        malloc(utils::allocator::malloc),
+        free(utils::allocator::free) {}
+
+  void set_allocator(std::function<void*(int)> malloc,
+                     std::function<void(void*)> free) {
+    this->malloc = malloc;
+    this->free = free;
   }
+
+ private:
+  std::function<void*(int)> malloc;
+  std::function<void(void*)> free;
 };
 
 /// A default stream
