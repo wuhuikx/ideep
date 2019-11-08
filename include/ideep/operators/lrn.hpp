@@ -9,7 +9,7 @@ struct lrn_forward : public dnnl::lrn_forward {
 
   static void compute(const tensor& src,
                       tensor& dst,
-                      tensor::dim local_size,
+                      dim local_size,
                       float alpha,
                       float beta,
                       float k = 1.0,
@@ -17,8 +17,9 @@ struct lrn_forward : public dnnl::lrn_forward {
                       prop_kind aprop_kind = prop_kind::forward_training,
                       const engine& aengine = engine::cpu_engine()) {
     auto src_desc = src.get_desc();
-    auto pd = primitive_desc({prop_kind::forward_inference, aalgorithm,
-                              src_desc, local_size, alpha, beta, k}, aengine);
+    auto pd = primitive_desc(
+        {aprop_kind, aalgorithm, src_desc, local_size, alpha, beta, k},
+        aengine);
 
     auto expected_src = src.reorder_if_necessary(pd.src_desc());
     dst.reinit_if_necessary(pd.dst_desc());
@@ -36,15 +37,43 @@ struct lrn_forward : public dnnl::lrn_forward {
 };
 
 struct lrn_backward : public dnnl::lrn_backward {
-  static void compute(const tensor& x,
-                      const tensor& grady,
-                      const tensor& y,
-                      tensor& gradx,
-                      tensor::dim local_size,
+
+  using super = dnnl::lrn_backward;
+
+  static void compute(const tensor& src,
+                      const tensor& diff_dst,
+                      const tensor& dst,
+                      tensor& diff_src,
+                      dim local_size,
                       float alpha,
                       float beta,
                       float k = 1.0,
-                      algorithm aalgorithm = algorithm::lrn_across_channels) {
+                      algorithm aalgorithm = algorithm::lrn_across_channels,
+                      const engine& aengine = engine::cpu_engine()) {
+
+    auto src_desc = src.get_desc();
+    auto forward_hints =
+        lrn_forward::primitive_desc({prop_kind::forward_training, aalgorithm,
+                                     src_desc, local_size, alpha, beta, k},
+                                    aengine);
+
+    auto pd = primitive_desc(
+        {aalgorithm, src_desc, diff_dst.get_desc(), local_size, alpha, beta, k},
+        aengine, forward_hints);
+    
+    auto expected_diff_dst = diff_dst.reorder_if_necessary(pd.diff_dst_desc());
+    diff_src.reinit_if_necessary(pd.diff_src_desc());
+
+    exec_args args = {{DNNL_ARG_SRC, src},
+                      {DNNL_ARG_DIFF_DST, expected_diff_dst},
+                      {DNNL_ARG_DIFF_SRC, diff_src}};
+
+    if (dst.has_workspace()) {
+      auto expected_workspace =
+          dst.get_workspace().reorder_if_necessary(pd.workspace_desc());
+      args.insert({DNNL_ARG_WORKSPACE, expected_workspace});
+    }
+    super(pd).execute(stream::default_stream(), args);
   }
 };
 
