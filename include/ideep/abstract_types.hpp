@@ -88,6 +88,7 @@ using prop_kind = dnnl::prop_kind;
 using algorithm = dnnl::algorithm;
 using batch_normalization_flag = dnnl::normalization_flags;
 using query = dnnl::query;
+using exec_args = std::unordered_map<int, memory>;
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
 #define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
@@ -144,8 +145,7 @@ struct engine : public dnnl::engine {
 };
 
 /// A default stream
-struct stream: public dnnl::stream {
-  // using dnnl::stream::stream;
+struct stream : public dnnl::stream {
   static dnnl::stream& default_stream() {
     static dnnl::stream s(engine::cpu_engine());
     return s;

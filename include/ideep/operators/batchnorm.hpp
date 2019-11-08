@@ -19,7 +19,7 @@ struct batch_normalization_forward_inference
     // XPZ: this overload has not been tested
     auto flags = batch_normalization_flag::use_scale_shift;
     auto src_desc = src.get_desc();
-    // XPZ: TODO: attr?
+
     auto pd = primitive_desc(
         {prop_kind::forward_inference, src_desc, epsilon, flags}, aengine);
     // have problem using pd.weights_desc?
@@ -47,7 +47,7 @@ struct batch_normalization_forward_inference
     auto flags = batch_normalization_flag::use_scale_shift |
                  batch_normalization_flag::use_global_stats;
     auto src_desc = src.get_desc();
-    // XPZ: TODO: attr?
+
     auto pd = primitive_desc(
         {prop_kind::forward_inference, src_desc, epsilon, flags}, aengine);
     tensor scale_shift {pd.weights_desc()};
@@ -96,7 +96,7 @@ struct batch_normalization_forward_training
                       const engine& aengine = engine::cpu_engine()) {
     auto flags = batch_normalization_flag::use_scale_shift;
     auto src_desc = src.get_desc();
-    // XPZ: TODO: attr?
+
     auto pd = primitive_desc(
         {prop_kind::forward_training, src_desc, epsilon, flags}, aengine);
     tensor scale_shift {pd.weights_desc()};

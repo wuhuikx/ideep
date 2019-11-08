@@ -16,7 +16,7 @@ struct binary : public dnnl::binary {
     auto src1_desc = src1.get_desc();
 
     dst.reinit_if_necessary(src0_desc);
-    auto dst_desc = dst.get_desc();
+    auto dst_desc = dst.get_desc(); // TODO: XPZ: any?
 
     auto pd = primitive_desc(
         {aalgorithm, src0_desc, src1_desc, dst_desc}, aengine);

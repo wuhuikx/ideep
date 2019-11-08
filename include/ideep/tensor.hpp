@@ -508,7 +508,6 @@ class tensor : public memory {
 
   /// Copy constructor
   tensor(const tensor &t) : memory(t) {
-    // std::cout << "tensor copy ctor" << std::endl;
     buffer_ = t.buffer_;
     scale_ = t.scale_;
     workspace_ = t.workspace_;
@@ -517,7 +516,6 @@ class tensor : public memory {
 
   /// Move constructor
   tensor(tensor &&t) : memory(std::move(t)) {
-    // std::cout << "tensor move ctor" << std::endl;
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
@@ -526,7 +524,6 @@ class tensor : public memory {
 
   /// Assignment operator
   tensor &operator=(const tensor &t) {
-    // std::cout << "tensor copy assign" << std::endl;
     memory::operator=(t);
     buffer_ = t.buffer_;
     scale_ = t.scale_;
@@ -537,7 +534,6 @@ class tensor : public memory {
 
   /// Move assignment operator
   tensor &operator=(tensor &&t) {
-    // std::cout << "tensor move assign" << std::endl;
     memory::operator=(std::move(t));
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
@@ -648,7 +644,7 @@ class tensor : public memory {
     }
     if (adims != get_dims()) {
       if (!is_public_format()) {
-        throw error(dnnl_runtime_error, "XPZ: TODO: reorder");
+        *this = std::move(to_public());
       }
       // XPZ: TODO: keep format structure
       set_desc({adims, get_data_type()});
@@ -670,8 +666,9 @@ class tensor : public memory {
 
   /// Convert the tensor to public format, and f32 data type by default
   // XPZ: TODO: scale_out ??
-  inline tensor to_public(void *array = nullptr, bool scale_out = true) const {
-    tensor dst{get_dims(), get_data_type(), array};
+  inline tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
+    auto dst = buffer ? tensor(get_dims(), get_data_type(), buffer)
+                      : tensor(get_dims(), get_data_type());
     this->reorder_to(dst);
     return dst;
   }
@@ -747,9 +744,9 @@ class tensor : public memory {
 
   /// Need reorder if current param used by non DNNL routines.
   /// XPZ: TODO: will be removed
-  inline bool need_reorder() const {
-    return (!is_public_format() || get_data_type() != data_type::f32);
-  }
+  // inline bool need_reorder() const {
+  //   return (!is_public_format() || get_data_type() != data_type::f32);
+  // }
 
   tensor permute_(const std::vector<int> &permute_axes = {}) {
     set_desc(get_desc().permute(permute_axes));

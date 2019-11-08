@@ -19,7 +19,7 @@ struct pooling_forward : public dnnl::pooling_forward {
                           aalgorithm == dnnl::algorithm::pooling_max;
 
     auto src_desc = src.get_desc();
-    auto dst_desc = tensor::desc(output_sizes, data_type::f32);
+    auto dst_desc = tensor::desc(output_sizes, data_type::f32).to_format_any();
 
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,
@@ -33,35 +33,7 @@ struct pooling_forward : public dnnl::pooling_forward {
       args.insert({DNNL_ARG_WORKSPACE, dst.get_workspace()});
     }
     super(pd).execute(stream::default_stream(), args);
- }
-
-private:
-  // dims infer_output_sizes(const dims& input_size,
-  //                            const dims& kernel_size,
-  //                            const dims& stride,
-  //                            const dims& padding_l,
-  //                            const dims& padding_r,
-  //                            const dims& dilation,
-  //                            bool ceil_mode) {
-
-  //   auto dim = input_size.size();
-  //   dims output_size(dim);
-  //   output_size[0] = input_size[0];
-  //   output_size[1] = input_size[1];
-  //   for (size_t i = 2; i < dim; ++i) {
-  //     output_size[i] = pooling_output_shape_pad_lr<int64_t>(
-  //       input_size[i],
-  //       kernel_size[i - 2],
-  //       padding_l[i - 2],
-  //       padding_r[i - 2],
-  //       stride[i - 2],
-  //       dilation[i - 2],
-  //       ceil_mode
-  //     );
-  //   }
-
-  //   return output_size;
-  // }
+  }
 };
 
 struct pooling_backward : public dnnl::pooling_backward {

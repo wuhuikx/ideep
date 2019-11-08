@@ -62,7 +62,7 @@ struct convolution_forward : public dnnl::convolution_forward {
       const dims& src_dims = dims()) {
 
     auto grouped = groups > 1;
-    auto weights_desc_usr = tensor::desc(weights_dims, dtype, format_tag::oihw);
+    auto weights_desc_usr = tensor::desc(weights_dims, dtype);
     auto weights_desc =
         grouped ? weights_desc_usr.to_grouped(groups) : weights_desc_usr;
 
@@ -97,8 +97,8 @@ struct convolution_forward : public dnnl::convolution_forward {
     dims y_dims = { mb, oc, oh, ow };
     auto y_dtype =
         dtype != data_type::s8 ? dtype : data_type::s32;
-    tensor::desc src_desc(x_dims, x_dtype, format_tag::nchw);
-    tensor::desc dst_desc(y_dims, y_dtype, format_tag::nchw);
+    tensor::desc src_desc(x_dims, x_dtype);
+    tensor::desc dst_desc(y_dims, y_dtype);
 
     // FIXME: workaroud winograd format issue in inference
     // If prop_kind == forward_inference, the dnnl_wino_fmt for weights is required by winograd primitive.
@@ -142,11 +142,6 @@ struct convolution_forward : public dnnl::convolution_forward {
     auto weights_desc_any = weights_desc.to_format_any();
     auto bias_desc_any = with_bias ? bias_desc.to_format_any() : tensor::desc();
     auto dst_desc_any = dst_desc.to_format_any();
-
-    // auto output_size = infer_output_size(
-    //     src_desc_any, weights_desc_any, padding_l, padding_r, strides, dilates);
-    // auto dst_desc_any = tensor::desc(
-    //     output_size, src_desc_any.get_data_type(), format_tag::any);
 
     if (with_bias) {
       return primitive_desc({aprop_kind, aalgorithm, src_desc_any,
@@ -207,33 +202,6 @@ private:
                          {DNNL_ARG_DST, dst}});
     }
   }
-
-  // static dims infer_output_size(const tensor::desc& input_desc,
-  //                               const tensor::desc& weights_desc,
-  //                               const dims& padding_l,
-  //                               const dims& padding_r,
-  //                               const dims& strides,
-  //                               const dims& dilates) {
-  //   // XPZ: TODO: Assert format. Assume NCHW
-  //   auto input_size = input_desc.get_dims();
-  //   auto kernel_size = weights_desc.get_dims();
-  //   auto with_groups = kernel_size.size() == (input_size.size() + 1);
-
-  //   auto dim = input_size.size();
-  //   dims output_size(dim);
-  //   output_size[0] = input_size[0];
-  //   output_size[1] = kernel_size[0] * (with_groups ? kernel_size[1] : 1);
-  //   for (size_t d = 2; d < dim; ++d) {
-  //     auto src = input_size[d];
-  //     auto ker = kernel_size[with_groups + d];
-  //     auto str = strides[d - 2];
-  //     auto dil = dilates[d - 2];
-  //     auto pad = padding_l[d - 2] + padding_r[d - 2];
-  //     auto ker_range = 1 + (ker - 1) * (dil + 1);
-  //     output_size[d] = (src + pad - ker_range) / str + 1;
-  //   }
-  //   return output_size;
-  // }
 };
 
 
@@ -337,17 +305,18 @@ struct convolution_backward_weights
                            const engine& aengine) {
 
     // make diff_weights and dilates compatible with DNNL
-    auto diff_weights_desc =
-        tensor::desc(diff_weights_dims, diff_dst.get_data_type(),
-                     format_tag::any).to_grouped(groups);
     auto dilates_ = utils::get_compatible_dilates(dilates);
+    auto diff_weights_desc =
+        tensor::desc(diff_weights_dims, diff_dst.get_data_type())
+            .to_format_any()
+            .to_grouped(groups);
 
     auto diff_dst_desc = diff_dst.get_desc().to_format_any();
     auto src_desc = src.get_desc().to_format_any();
 
     auto diff_bias_desc = with_diff_bias
-        ? tensor::desc({diff_dst.get_dim(1)}, diff_dst.get_data_type(),
-                        format_tag::any)
+        ? tensor::desc({diff_dst.get_dim(1)}, diff_dst.get_data_type())
+              .to_format_any()
         : tensor::desc();
 
     auto forward_hints =

@@ -66,11 +66,6 @@ struct convolution_transpose_forward : public dnnl::deconvolution_forward {
     auto bias_desc_any = with_bias ? bias_desc.to_format_any() : tensor::desc();
     auto dst_desc_any = dst_desc.to_format_any();
 
-    // auto output_size = infer_output_size(
-    //     src_desc_any, weights_desc_any, padding_l, padding_r, strides, dilates);
-    // auto dst_desc_any = tensor::desc(
-    //     output_size, src_desc_any.get_data_type(), format_tag::any);
-
     if (with_bias) {
       return primitive_desc({aprop_kind, aalgorithm, src_desc_any,
                              weights_desc_any, bias_desc_any, dst_desc_any,
@@ -130,34 +125,6 @@ struct convolution_transpose_forward : public dnnl::deconvolution_forward {
                          {DNNL_ARG_DST, dst}});
     }
   }
-
-  // static dims infer_output_size(const tensor::desc& input_desc,
-  //                               const tensor::desc& weights_desc,
-  //                               const dims& padding_l,
-  //                               const dims& padding_r,
-  //                               const dims& output_padding,
-  //                               const dims& strides,
-  //                               const dims& dilates) {
-  //   auto input_size = input_desc.get_dims();
-  //   auto kernel_size = weights_desc.get_dims();
-  //   auto with_groups = kernel_size.size() == (input_size.size() + 1);
-
-  //   auto dim = input_size.size();
-  //   dims output_size(dim);
-  //   output_size[0] = input_size[0];
-  //   output_size[1] = kernel_size[0] * (with_groups ? kernel_size[1] : 1);
-  //   for (size_t d = 2; d < dim; ++d) {
-  //     auto src = input_size[d];
-  //     auto ker = kernel_size[with_groups + d];
-  //     auto str = strides[d - 2];
-  //     auto dil = dilates[d - 2];
-  //     auto pad = padding_l[d - 2] + padding_r[d - 2];
-  //     auto out_pad = output_padding[d - 2];
-  //     auto ker_range = 1 + (ker - 1) * (dil + 1);
-  //     output_size[d] = (src - 1) * str - pad + ker + out_pad;
-  //   }
-  //   return output_size;
-  // }
 };
 
 struct convolution_transpose_backward_data
