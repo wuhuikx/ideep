@@ -122,6 +122,13 @@ class tensor : public memory {
              && strides[w] == 1;
     };
 
+    // workaround for issue intel/mkl-dnn#588
+    bool is_4c_blocked() {
+      auto& blk = blocking_desc();
+      return blk.inner_nblks == 1
+          && blk.inner_idxs[0] == 1 && blk.inner_blks[0] == 4;
+    }
+
     /** returns true if data is dense in memory */
     bool is_dense(bool with_padding = false) const {
       if (format_kind() == dnnl_format_kind_undef ||
@@ -603,6 +610,15 @@ class tensor : public memory {
       tensor dst{expected_desc};
       this->reorder_to(dst);
       return dst;
+    }
+  }
+
+  // workaround for issue intel/mkl-dnn#588
+  desc _get_unblocked_desc_if_4c_blocked() const {
+    if (get_desc().is_4c_blocked()) {
+      return desc(get_dims(), get_data_type());
+    } else {
+      return get_desc();
     }
   }
 

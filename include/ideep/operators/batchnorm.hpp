@@ -18,7 +18,10 @@ struct batch_normalization_forward_inference
                       const engine& aengine = engine::cpu_engine()) {
     // XPZ: this overload has not been tested
     auto flags = batch_normalization_flag::use_scale_shift;
-    auto src_desc = src.get_desc();
+
+    // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
+    auto src_desc = src._get_unblocked_desc_if_4c_blocked();
+    // auto src_desc = src.get_desc();
 
     auto pd = primitive_desc(
         {prop_kind::forward_inference, src_desc, epsilon, flags}, aengine);
@@ -46,7 +49,10 @@ struct batch_normalization_forward_inference
                       const engine& aengine = engine::cpu_engine()) {
     auto flags = batch_normalization_flag::use_scale_shift |
                  batch_normalization_flag::use_global_stats;
-    auto src_desc = src.get_desc();
+
+    // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
+    auto src_desc = src._get_unblocked_desc_if_4c_blocked();
+    // auto src_desc = src.get_desc();
 
     auto pd = primitive_desc(
         {prop_kind::forward_inference, src_desc, epsilon, flags}, aengine);
@@ -95,7 +101,10 @@ struct batch_normalization_forward_training
                       float epsilon,
                       const engine& aengine = engine::cpu_engine()) {
     auto flags = batch_normalization_flag::use_scale_shift;
-    auto src_desc = src.get_desc();
+
+    // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
+    auto src_desc = src._get_unblocked_desc_if_4c_blocked();
+    // auto src_desc = src.get_desc();
 
     auto pd = primitive_desc(
         {prop_kind::forward_training, src_desc, epsilon, flags}, aengine);

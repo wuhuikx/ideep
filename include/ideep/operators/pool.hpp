@@ -18,7 +18,9 @@ struct pooling_forward : public dnnl::pooling_forward {
     bool with_workspace = aprop_kind == prop_kind::forward_training &&
                           aalgorithm == dnnl::algorithm::pooling_max;
 
-    auto src_desc = src.get_desc();
+    // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
+    auto src_desc = src._get_unblocked_desc_if_4c_blocked();
+    // auto src_desc = src.get_desc();
     auto dst_desc = tensor::desc(output_sizes, data_type::f32).to_format_any();
 
     auto pd = primitive_desc(

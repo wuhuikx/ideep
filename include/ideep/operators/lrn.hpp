@@ -51,7 +51,9 @@ struct lrn_backward : public dnnl::lrn_backward {
                       algorithm aalgorithm = algorithm::lrn_across_channels,
                       const engine& aengine = engine::cpu_engine()) {
 
-    auto src_desc = src.get_desc();
+    // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
+    auto src_desc = src._get_unblocked_desc_if_4c_blocked();
+    // auto src_desc = src.get_desc();
     auto forward_hints =
         lrn_forward::primitive_desc({prop_kind::forward_training, aalgorithm,
                                      src_desc, local_size, alpha, beta, k},
