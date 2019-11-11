@@ -255,7 +255,31 @@ struct convolution_transpose_backward_data
                       const int groups = 1,
                       algorithm aalgorithm = algorithm::deconvolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
+    auto weights_ = weights.make_grouped_weights(groups);
+    auto dilates_ = utils::get_compatible_dilates(dilates);
 
+    auto diff_dst_desc = diff_dst.get_desc().to_format_any();
+    auto weights_desc = weights_.get_desc().to_format_any();
+
+    tensor::desc diff_src_desc(diff_src_dims, diff_dst_desc.get_data_type());
+
+    auto forward_hints =
+        convolution_transpose_forward::get_primitive_desc</*with_bias=*/false>(
+            diff_src_desc, weights_desc, tensor::desc(), diff_dst_desc, strides,
+            dilates_, padding_l, padding_r);
+
+    auto pd = primitive_desc(
+        {aalgorithm, diff_src_desc, weights_desc, diff_dst_desc, strides,
+         dilates_, padding_l, padding_r}, aengine, forward_hints);
+
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
+    diff_src.reinit_if_necessary(pd.diff_src_desc());
+
+    super(pd).execute(stream::default_stream(), 
+                      {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                       {DNNL_ARG_WEIGHTS, expected_weights},
+                       {DNNL_ARG_DIFF_SRC, diff_src}});
   }
 };
 
@@ -276,7 +300,9 @@ struct convolution_transpose_backward_weights
                       const int groups = 1,
                       algorithm aalgorithm = algorithm::deconvolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
-
+   compute_impl</*with_diff_bias=*/true>(
+       src, diff_dst, diff_weights_dims, diff_weights, diff_bias,
+       strides, dilates, padding_l, padding_r, groups, aalgorithm, aengine);
   }
 
   static void compute(const tensor& src,
@@ -290,10 +316,77 @@ struct convolution_transpose_backward_weights
                       const int groups = 1,
                       algorithm aalgorithm = algorithm::deconvolution_direct,
                       const engine& aengine = engine::cpu_engine()) {
+    static tensor dummy_diff_bias;
+    compute_impl</*with_diff_bias=*/false>(
+        src, diff_dst, diff_weights_dims, diff_weights, dummy_diff_bias,
+        strides, dilates, padding_l, padding_r, groups, aalgorithm, aengine);
+  }
+private:
+  template <bool with_diff_bias>
+  static void compute_impl(const tensor& src,
+                           const tensor& diff_dst,
+                           const dims& diff_weights_dims,
+                           tensor& diff_weights,
+                           tensor& diff_bias,
+                           const dims& strides,
+                           const dims& dilates,
+                           const dims& padding_l,
+                           const dims& padding_r,
+                           const int groups,
+                           algorithm aalgorithm,
+                           const engine& aengine) {
 
+    // make diff_weights and dilates compatible with DNNL
+    auto dilates_ = utils::get_compatible_dilates(dilates);
+    auto diff_weights_desc =
+        tensor::desc(diff_weights_dims, diff_dst.get_data_type())
+            .to_format_any()
+            .to_grouped(groups);
+
+    auto diff_dst_desc = diff_dst.get_desc().to_format_any();
+    auto src_desc = src.get_desc().to_format_any();
+
+    auto diff_bias_desc = with_diff_bias
+        ? tensor::desc({diff_dst.get_dim(1)}, diff_dst.get_data_type())
+              .to_format_any()
+        : tensor::desc();
+
+    auto forward_hints =
+        convolution_transpose_forward::get_primitive_desc<with_diff_bias>(
+            src_desc, diff_weights_desc, diff_bias_desc, diff_dst_desc, strides,
+            dilates_, padding_l, padding_r, attr_t(), aalgorithm,
+            prop_kind::forward, aengine);
+
+    auto pd = with_diff_bias
+        ? primitive_desc({aalgorithm, src_desc, diff_weights_desc,
+                          diff_bias_desc, diff_dst_desc, strides, dilates_,
+                          padding_l, padding_r}, aengine, forward_hints)
+        : primitive_desc({aalgorithm, src_desc, diff_weights_desc,
+                          diff_dst_desc, strides, dilates_,
+                          padding_l, padding_r}, aengine, forward_hints);
+
+    auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    diff_weights.reinit_if_necessary(pd.diff_weights_desc());
+
+    if (with_diff_bias) {
+      diff_bias.reinit_if_necessary(pd.diff_bias_desc());
+      super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                         {DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_DIFF_WEIGHTS, diff_weights},
+                         {DNNL_ARG_DIFF_BIAS, diff_bias}});
+    } else {
+      super(pd).execute(stream::default_stream(),
+                        {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                         {DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_DIFF_WEIGHTS, diff_weights}});
+    }
+    if (groups > 1) {
+      diff_weights.reshape(diff_weights_dims);
+    }
   }
 };
-
 }  // namespace ideep
 
 #endif
