@@ -303,26 +303,39 @@ class tensor : public memory {
         }
       }
 
-      // permute dims
-      auto src_dims = get_dims();
-      dims dst_dims(ndims());
-      for (int i = 0; i < ndims(); i++) {
-        dst_dims[i] = src_dims[perms[i]];
-      }
+      desc new_desc{};
+      auto ndims = data.ndims;
+      new_desc.data.ndims = data.ndims;
+      new_desc.data.data_type = data.data_type;
+      new_desc.data.format_kind = data.format_kind;
+      new_desc.data.offset0 = data.offset0;
 
-      // compute strides on new simds
-      auto new_desc = to_dims(dst_dims);
-      
-      // permute strides, padded_dims, inner_idxs
-      auto& new_stride = new_desc.blocking_strides();
-      auto& old_stride = blocking_strides();
+      // permute dims, padded_dims, padded_offsets, strides
+      auto& new_dims = new_desc.data.dims;
+      auto& old_dims = data.dims;
+      auto& new_stride = new_desc.data.format_desc.blocking.strides;
+      auto& old_stride = data.format_desc.blocking.strides;
       auto& new_paddim = new_desc.data.padded_dims;
       auto& old_paddim = data.padded_dims;
-      auto& inner_idxs = new_desc.data.format_desc.blocking.inner_idxs;
-      for (int i = 0; i < ndims(); i++) {
+      auto& new_padoff = new_desc.data.padded_offsets;
+      auto& old_padoff = data.padded_offsets;
+      for (int i = 0; i < ndims; i++) {
+        new_dims[i] = old_dims[perms[i]];
         new_stride[i] = old_stride[perms[i]];
         new_paddim[i] = old_paddim[perms[i]];
-        inner_idxs[i] = perms[inner_idxs[i]];
+        new_padoff[i] = old_padoff[perms[i]];
+      }
+
+      // permute blocking
+      auto inner_nblks = data.format_desc.blocking.inner_nblks;
+      new_desc.data.format_desc.blocking.inner_nblks = inner_nblks;
+      auto& old_inner_idxs = data.format_desc.blocking.inner_idxs;
+      auto& new_inner_idxs = new_desc.data.format_desc.blocking.inner_idxs;
+      auto& old_inner_blks = data.format_desc.blocking.inner_blks;
+      auto& new_inner_blks = new_desc.data.format_desc.blocking.inner_blks;
+      for (int i = 0; i < inner_nblks; i++) {
+        new_inner_idxs[i] = perms[old_inner_idxs[i]];
+        new_inner_blks[i] = old_inner_blks[i];
       }
 
       return new_desc;
