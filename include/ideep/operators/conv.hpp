@@ -306,10 +306,11 @@ struct convolution_backward_weights
 
     // make diff_weights and dilates compatible with DNNL
     auto dilates_ = utils::get_compatible_dilates(dilates);
-    auto diff_weights_desc =
-        tensor::desc(diff_weights_dims, diff_dst.get_data_type())
-            .to_format_any()
-            .to_grouped(groups);
+    auto diff_weights_desc_usr =
+        tensor::desc(diff_weights_dims, diff_dst.get_data_type());
+    auto diff_weights_desc = groups > 1
+        ? diff_weights_desc_usr.to_format_any().to_grouped(groups)
+        : diff_weights_desc_usr.to_format_any();
 
     auto diff_dst_desc = diff_dst.get_desc().to_format_any();
     auto src_desc = src.get_desc().to_format_any();
@@ -352,7 +353,8 @@ struct convolution_backward_weights
     }
 
     if (groups > 1) {
-      diff_weights.reshape(diff_weights_dims);
+      diff_weights.to_format(format_tag::abcde);
+      diff_weights.set_desc(diff_weights_desc_usr);
     }
   }
 };

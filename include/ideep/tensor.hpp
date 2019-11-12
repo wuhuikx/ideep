@@ -40,6 +40,29 @@ class tensor : public memory {
       return data.dims[index];
     }
 
+    void print_desc() const {
+      auto md = data;
+      printf("\t\t");
+      for (int i = 0; i < md.ndims; i++)
+          printf("%c\t", 'A' + i);
+      printf("\ndims\t\t");
+      for (int i = 0; i < md.ndims; i++)
+          printf("%ld\t", md.dims[i]);
+      printf("\npadded_dims\t");
+      for (int i = 0; i < md.ndims; i++)
+          printf("%ld\t", md.padded_dims[i]);
+      printf("\nstrides\t\t");
+      for (int i = 0; i < md.ndims; i++)
+          printf("%ld\t", md.format_desc.blocking.strides[i]);
+      printf("\n\ninner_idxs\t");
+      for (int i = 0; i < md.format_desc.blocking.inner_nblks; i++)
+          printf("%ld\t", md.format_desc.blocking.inner_idxs[i]);
+      printf("\ninner_blks\t");
+      for (int i = 0; i < md.format_desc.blocking.inner_nblks; i++)
+          printf("%ld\t", md.format_desc.blocking.inner_blks[i]);
+      printf("\n");
+    }
+
     /// Returns dimension vector
     inline dims get_dims() const {
       return dims(data.dims, data.dims + data.ndims);
@@ -58,8 +81,7 @@ class tensor : public memory {
     inline dim_t nelems(bool with_padding = false) const {
       if (is_zero()) return 0;
       auto dims = with_padding ? data.padded_dims : data.dims;
-      return std::accumulate(dims, dims + data.ndims, 1,
-                             std::multiplies<dim_t>());
+      return std::accumulate(dims, dims + ndims(), 1, std::multiplies<dim_t>());
     }
 
     /** returns true if memory descriptor contains zero as one of its dim */
@@ -221,8 +243,16 @@ class tensor : public memory {
       return is_blocking_desc() && blocking_desc().inner_nblks == 0;
     }
 
+    desc to_format(format_tag aformat_tag) const {
+      return desc(get_dims(), get_data_type(), aformat_tag);
+    }
+
     desc to_format_any() const {
       return desc(get_dims(), get_data_type(), format_tag::any);
+    }
+    
+    desc to_default_format() const {
+      return desc(get_dims(), get_data_type());
     }
 
     desc clone() const {
@@ -280,13 +310,21 @@ class tensor : public memory {
         dst_dims[i] = src_dims[perms[i]];
       }
 
-      // permute strides
+      // compute strides on new simds
       auto new_desc = to_dims(dst_dims);
+      
+      // permute strides, padded_dims, inner_idxs
       auto& new_stride = new_desc.blocking_strides();
       auto& old_stride = blocking_strides();
+      auto& new_paddim = new_desc.data.padded_dims;
+      auto& old_paddim = data.padded_dims;
+      auto& inner_idxs = new_desc.data.format_desc.blocking.inner_idxs;
       for (int i = 0; i < ndims(); i++) {
         new_stride[i] = old_stride[perms[i]];
+        new_paddim[i] = old_paddim[perms[i]];
+        inner_idxs[i] = perms[inner_idxs[i]];
       }
+
       return new_desc;
     }
 
@@ -382,6 +420,10 @@ class tensor : public memory {
     return desc(*cdesc);
   }
 
+  void print_desc() const {
+    get_desc().print_desc();
+  }
+
   // For backward compatibility. Will be deprecated.
   desc get_descriptor() const { return get_desc(); }
 
@@ -447,12 +489,7 @@ class tensor : public memory {
     buffer_.reset();
     scale_.reset();
     eng_ = aengine;
-
-    dnnl_memory_t result;
-    error::wrap_c_api(
-        dnnl_memory_create(&result, &adesc.data, aengine.get(), ahandle),
-        "could not create a memory");
-    reset(result);
+    reset_internal(adesc, aengine, ahandle);
   }
 
   /// Function that refill tensor with new description or buffer
@@ -461,12 +498,7 @@ class tensor : public memory {
     buffer_.reset(aengine.malloc(adesc.get_size()), aengine.free);
     scale_.reset();
     eng_ = aengine;
-
-    dnnl_memory_t result;
-    error::wrap_c_api(
-        dnnl_memory_create(&result, &adesc.data, aengine.get(), buffer_.get()),
-        "could not create a memory");
-    reset(result);
+    reset_internal(adesc, aengine, buffer_.get());
   }
 
   // format_tag, buffer
@@ -579,15 +611,17 @@ class tensor : public memory {
   inline static format_tag get_default_format(const dims &adims) {
     switch (adims.size()) {
       case 1:
-        return format_tag::x;
+        return format_tag::a;
       case 2:
-        return format_tag::nc;
+        return format_tag::ab;
       case 3:
-        return format_tag::ncw;
+        return format_tag::abc;
       case 4:
-        return format_tag::nchw;
+        return format_tag::abcd;
       case 5:
-        return format_tag::ncdhw;
+        return format_tag::abcde;
+      case 6:
+        return format_tag::abcdef;
       default:
         return format_tag::undef;
     }
@@ -680,6 +714,12 @@ class tensor : public memory {
                       : tensor(get_dims(), get_data_type());
     this->reorder_to(dst);
     return dst;
+  }
+
+  inline void to_format(format_tag aformat_tag) {
+    auto dst = tensor(get_desc().to_format(aformat_tag));
+    this->reorder_to(dst);
+    *this = std::move(dst);
   }
 
   /// Fill the tensor with a src tensor
@@ -780,16 +820,6 @@ class tensor : public memory {
     *this = std::move(src.permute(perms));
   }
 
- private:
-  bool has_same_volume(const dims &new_dims) const {
-    auto old_dims = get_dims();
-    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
-                                      std::multiplies<dim_t>());
-    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
-                                      std::multiplies<dim_t>());
-    return volume_old == volume_new;
-  }
-
   /// Set a descriptor into tensor to replace the older one, keep buffer
   /// It is caller's responsibility to make sure the original buffer is large
   /// enough for specified descriptor
@@ -802,6 +832,24 @@ class tensor : public memory {
     buffer_ = std::move(buf);
     workspace_ = std::move(ws);
     scale_ = std::move(scale);
+  }
+
+ private:
+  void reset_internal(const desc &adesc, const engine &aengine, void *ahandle) {
+    dnnl_memory_t result;
+    error::wrap_c_api(
+        dnnl_memory_create(&result, &adesc.data, aengine.get(), ahandle),
+        "could not create a memory");
+    reset(result);
+  }
+
+  bool has_same_volume(const dims &new_dims) const {
+    auto old_dims = get_dims();
+    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
+                                      std::multiplies<dim_t>());
+    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
+                                      std::multiplies<dim_t>());
+    return volume_old == volume_new;
   }
 
   std::shared_ptr<tensor> workspace_;

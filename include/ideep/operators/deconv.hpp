@@ -325,7 +325,7 @@ private:
   template <bool with_diff_bias>
   static void compute_impl(const tensor& src,
                            const tensor& diff_dst,
-                           const dims& diff_weights_dims,
+                           const dims& diff_weights_dims, // dim: iohw
                            tensor& diff_weights,
                            tensor& diff_bias,
                            const dims& strides,
@@ -338,10 +338,16 @@ private:
 
     // make diff_weights and dilates compatible with DNNL
     auto dilates_ = utils::get_compatible_dilates(dilates);
-    auto diff_weights_desc =
+    // TODO: simplify the following logic once DNNL has giodhw (acbdef) format
+    // oihw dim, iohw format
+    auto diff_weights_desc_usr = 
         tensor::desc(diff_weights_dims, diff_dst.get_data_type())
-            .to_format_any()
-            .to_grouped(groups);
+            .transpose(0, 1);
+    // goihw dim
+    auto diff_weights_desc = groups > 1
+        ? diff_weights_desc_usr
+            .transpose(0, 1).to_grouped(groups).transpose(1, 2).to_format_any()
+        : diff_weights_desc_usr.to_format_any();
 
     auto diff_dst_desc = diff_dst.get_desc().to_format_any();
     auto src_desc = src.get_desc().to_format_any();
@@ -382,9 +388,17 @@ private:
                          {DNNL_ARG_SRC, expected_src},
                          {DNNL_ARG_DIFF_WEIGHTS, diff_weights}});
     }
+
     if (groups > 1) {
-      diff_weights.reshape(diff_weights_dims);
+      // In 5d cases the expected format of diff_weights DNNL chooses for us
+      // could be aCBde8b8c or other non-plain formats. But only when it is of
+      // format acbde (giohw) can we directly recover it to a ungrouped weights
+      // by overwriting its desc with diff_weights_desc_usr which is of iohw
+      diff_weights.to_format(format_tag::acbde);
+      diff_weights.set_desc(diff_weights_desc_usr);
     }
+    // output dims is in iohw order
+    diff_weights.transpose_(0, 1);
   }
 };
 }  // namespace ideep
