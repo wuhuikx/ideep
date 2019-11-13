@@ -9,8 +9,7 @@ namespace ideep {
 
 class tensor : public memory {
  public:
-  using dims = memory::dims;
-  using dim_t = dims::value_type;
+  using dim_t = dnnl_dim_t;
   using dims_t = dnnl_dims_t;
   using format_kind_t = dnnl_format_kind_t;
   using blocking_desc_t = dnnl_blocking_desc_t;
@@ -267,17 +266,72 @@ class tensor : public memory {
     }
 
     desc to_grouped(int groups) const {
-      auto dims = get_dims();
-      dims.insert(dims.begin(), groups);
-      dims[1] /= groups;
-      return desc(dims, get_data_type()); // default goihw for 5d, goidhw for 6d
+      auto ret = clone();
+      
+      auto &dims = ret.data.dims;
+      auto &paddim = ret.data.padded_dims;
+      auto &blk = ret.data.format_desc.blocking;
+      auto &strides = blk.strides;
+
+      auto second_dim_blocks = 1;
+
+      for (size_t i = 0; i < blk.inner_nblks; i++) {
+        // assume most significant dim g is not blocked
+        blk.inner_idxs[i] += 1;
+        if (blk.inner_idxs[i] == 1)
+          second_dim_blocks *= blk.inner_blks[i];
+      }
+
+      for (size_t i = ret.data.ndims; i >= 2; i--) {
+        dims[i] = dims[i - 1];
+        paddim[i] = paddim[i - 1];
+        strides[i] = strides[i - 1];
+      }
+
+      ret.data.ndims += 1;
+
+      dims[1] = dims[0] / groups;
+      paddim[1] = paddim[0] / groups;
+      strides[1] = strides[0];
+
+      dims[0] = groups;
+      paddim[0] = groups;
+      strides[0] = strides[1] * paddim[1] / second_dim_blocks;
+
+      return ret;
     }
 
+    // blocking structure reserving
     desc to_ungrouped() const {
-      auto dims = get_dims();
-      dims[1] *= dims[0]; // g == dims[0]
-      dims.erase(dims.begin());
-      return desc(dims, get_data_type()); // default oihw for 4d, oidhe for 5d
+      IDEEP_ENFORCE(ndims() >= 2, "Cannot ungroup a descriptor with ndims < 2");
+
+      auto ret = clone();
+
+      auto &dims = ret.data.dims;
+      auto &paddim = ret.data.padded_dims;
+      auto &blk = ret.data.format_desc.blocking;
+      auto &strides = blk.strides;
+
+      // merge top two dims
+      dims[0] *= dims[1];
+      paddim[0] *= paddim[1];
+      strides[0] = strides[1];
+
+      // move each dim to the left 
+      for (size_t i = 2; i < ret.data.ndims; i++) {
+        dims[i - 1] = dims[i];
+        paddim[i - 1] = paddim[i];
+        strides[i - 1] = strides[i];
+      }
+
+      ret.data.ndims -= 1;
+
+      for (size_t i = 0; i < blk.inner_nblks; i++) {
+        // assume most significant dim g is not blocked
+        blk.inner_idxs[i] -= 1;
+      }
+
+      return ret;
     }
 
     desc permute(const std::vector<int> &permute_axes = {}) const {
