@@ -59,7 +59,9 @@ struct convolution_forward : public dnnl::convolution_forward {
       algorithm aalgorithm = algorithm::convolution_direct,
       prop_kind aprop_kind = prop_kind::forward,
       data_type x_dtype = data_type::f32,
-      const dims& src_dims = dims()) {
+      const dims& src_dims = dims(),
+      const attr_t& attr = attr_t(),
+      const engine& aengine = engine::cpu_engine()) {
 
     auto grouped = groups > 1;
     auto weights_desc_usr = tensor::desc(weights_dims, dtype);
@@ -190,10 +192,11 @@ private:
     dst.reinit_if_necessary(pd.dst_desc());
 
     if (with_bias) {
+      auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc());
       super(pd).execute(stream::default_stream(), 
                         {{DNNL_ARG_SRC, expected_src},
                          {DNNL_ARG_WEIGHTS, expected_weights},
-                         {DNNL_ARG_BIAS, bias},
+                         {DNNL_ARG_BIAS, expected_bias},
                          {DNNL_ARG_DST, dst}});
     } else {
       super(pd).execute(stream::default_stream(), 
@@ -315,10 +318,8 @@ struct convolution_backward_weights
     auto diff_dst_desc = diff_dst.get_desc().to_format_any();
     auto src_desc = src.get_desc().to_format_any();
 
-    auto diff_bias_desc = with_diff_bias
-        ? tensor::desc({diff_dst.get_dim(1)}, diff_dst.get_data_type())
-              .to_format_any()
-        : tensor::desc();
+    auto diff_bias_desc =
+        tensor::desc({diff_dst.get_dim(1)}, diff_dst.get_data_type(), tag::any);
 
     auto forward_hints =
         convolution_forward::get_primitive_desc<with_diff_bias>(

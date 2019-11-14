@@ -79,6 +79,7 @@ using scale_t = std::vector<float>;
 
 using memory = dnnl::memory;
 using format_tag = memory::format_tag;
+using tag = memory::format_tag;
 using data_type = memory::data_type;
 using dims = memory::dims;
 using dim = memory::dim;
