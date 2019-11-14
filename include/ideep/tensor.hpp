@@ -13,6 +13,7 @@ class tensor : public memory {
   using dims_t = dnnl_dims_t;
   using format_kind_t = dnnl_format_kind_t;
   using blocking_desc_t = dnnl_blocking_desc_t;
+  using descriptor = desc; // for backward compatibility
 
   struct desc : public memory::desc {
     friend class tensor;
@@ -712,6 +713,20 @@ class tensor : public memory {
     }
   }
 
+  // legacy API for caffe2
+  dims get_public_format_dims() const {
+    auto nchw_dims = get_dims();
+    if (get_desc().is_nhwc()) {
+      dims nhwc_dims(ndims());
+      nhwc_dims[0] = nchw_dims[0];
+      nhwc_dims[1] = nchw_dims[2];
+      nhwc_dims[2] = nchw_dims[3];
+      nhwc_dims[3] = nchw_dims[1];
+      return nhwc_dims;
+    }
+    return nchw_dims;
+  }
+
   // For debugging only
   inline void peek_first_four_elems() const {
     auto data = reinterpret_cast<float *>(get_data_handle());
@@ -795,8 +810,9 @@ class tensor : public memory {
   /// Convert the tensor to public format, and f32 data type by default
   // XPZ: TODO: scale_out ??
   inline tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
-    auto dst = buffer ? tensor(get_dims(), get_data_type(), buffer)
-                      : tensor(get_dims(), get_data_type());
+    auto public_desc =
+        is_public_format() ? get_desc() : desc(get_dims(), get_data_type());
+    auto dst = buffer ? tensor(public_desc, buffer): tensor(public_desc);
     this->reorder_to(dst);
     return dst;
   }
