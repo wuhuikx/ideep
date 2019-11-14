@@ -15,6 +15,8 @@ class tensor : public memory {
   using blocking_desc_t = dnnl_blocking_desc_t;
 
   struct desc : public memory::desc {
+    friend class tensor;
+
     desc() : memory::desc() {};
 
     desc(const memory::desc &adesc) : memory::desc(adesc.data) {};
@@ -312,6 +314,10 @@ class tensor : public memory {
       auto &blk = ret.data.format_desc.blocking;
       auto &strides = blk.strides;
 
+      // implicitly store group info
+      auto g = dims[0];
+      ret.set_groups(g);
+
       // merge top two dims
       dims[0] *= dims[1];
       paddim[0] *= paddim[1];
@@ -477,6 +483,18 @@ class tensor : public memory {
       IDEEP_ENFORCE(is_blocking_desc(),
                     "Cannot get blocking desc on a non-blocking desc");
       return const_cast<dnnl_memory_desc_t&>(data).format_desc.blocking.strides;
+    }
+
+    void set_groups(dim groups) {
+      auto reserved_size = 64;
+      auto offset = reserved_size / sizeof(dim) - 1;
+      reinterpret_cast<dim *>(data.extra.reserved)[offset] = groups;
+    }
+
+    dim get_groups() {
+      auto reserved_size = 64;
+      auto offset = reserved_size / sizeof(dim) - 1;
+      return reinterpret_cast<dim *>(data.extra.reserved)[offset];
     }
   };
 
@@ -790,7 +808,16 @@ class tensor : public memory {
   }
 
   /// Fill the tensor with a src tensor
-  void feed_from(const tensor &src) { this->reorder_from(src); }
+  void feed_from(const tensor &src) {
+    auto groups = 1;
+    if ((groups = get_desc().get_groups()) != 1 ||
+        (groups = src.get_desc().get_groups()) != 1) {
+      auto mask_dst = this->make_grouped_weights(groups);
+      auto mask_src = src.make_grouped_weights(groups);
+      mask_src.reorder_to(mask_dst);
+    } else
+      src.reorder_to(*this);
+  }
 
   // For backward compatibility. Will be deprecated.
   void feed_from(const dims &adims, data_type adata_type, const void *array) {
@@ -820,15 +847,6 @@ class tensor : public memory {
     tensor dst{adims, get_data_type(), get_engine()};
     extract_submemory(dst, adims, offsets, attr);
     return dst;
-  }
-
-  /// Reordering weights
-  void feed_from_weights(const tensor &src, int groups = 1) {
-    auto mask_dst = this->make_grouped_weights(groups);
-    auto mask_src = src.make_grouped_weights(groups);
-    dnnl::reorder(mask_src, mask_dst).execute(stream::default_stream(),
-                                              const_cast<tensor &>(mask_src),
-                                              mask_dst);
   }
 
   // data copy
