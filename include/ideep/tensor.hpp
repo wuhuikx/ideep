@@ -841,7 +841,6 @@ class tensor : public memory {
   }
 
   // reorder src to part of this tensor
-  // XPZ: for caffe2 concat. correctness?
   void insert_submemory(const tensor &src, const dims &adims,
                         const dims &offsets, const attr_t &attr = attr_t()) {
     auto view = get_desc().submemory_desc(adims, offsets);

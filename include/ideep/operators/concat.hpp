@@ -31,14 +31,13 @@ struct concat : public dnnl::concat {
   }
 
   // for caffe2
-  // TODO: XPZ: correctness?
   static std::vector<int32_t> compute(
       std::vector<tensor>& inputs,
       int axis,
       bool add_axis,
       tensor& dst,
       const engine& aengine = engine::cpu_engine()) {
-    IDEEP_ENFORCE(axis < (inputs[0].ndims() + (add_axis ? 1 : 0)),
+    IDEEP_ENFORCE(axis < (inputs[0].ndims() + add_axis),
                   "invalid axis in concat");
     for (int i = 0; i < inputs[0].ndims(); i++) {
       if (i == axis && !add_axis) continue;
@@ -79,8 +78,7 @@ struct concat : public dnnl::concat {
     }
 
     dims offset_dims(dst_dims.size(), 0);
-    if (add_axis)
-      dst.reinit(dst_dims, dst_data_type);
+    dst.reinit(dst_dims, dst_data_type);
     if (dst_data_type != data_type::f32)
       dst.set_scale(min_scale);
 
@@ -109,18 +107,15 @@ struct concat : public dnnl::concat {
     // }
 
     for (unsigned i = 0; i < inputs.size(); ++i) {
+      auto input_i = inputs[i];
+      auto in_dims = inputs[i].get_dims();
       scales[0] = min_scale[0] /
-                  (inputs[i].has_scale() ? inputs[i].get_scale()[0] : 1.0f);
+          (input_i.has_scale() ? input_i.get_scale()[0] : 1.0f);
       if (add_axis) {
-        dims in_dims(inputs[i].get_dims());
         in_dims.insert(in_dims.begin() + axis, 1);
-        tensor in_mask {inputs[i].get_desc().reshape(in_dims),
-                        inputs[i].get_data_handle()};
-        in_mask.insert_submemory(dst, in_dims, offset_dims, {0, scales});
-      } else {
-        auto in_dims = inputs[i].get_dims();
-        inputs[i].insert_submemory(dst, in_dims, offset_dims, {0, scales});
+        input_i = input_i.reshape(in_dims);
       }
+      dst.insert_submemory(input_i, in_dims, offset_dims, {0, scales});
       offset_dims[axis] += axis_info[i];
     }
 
