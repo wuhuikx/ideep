@@ -91,17 +91,6 @@ class tensor : public memory {
       return std::accumulate(dims, dims + ndims(), 1, std::multiplies<dim_t>());
     }
 
-    /** returns true if memory descriptor contains zero as one of its dim */
-    bool has_zero_dim() const { return nelems() == 0; }
-
-    bool is_blocking_desc() const { return format_kind() == dnnl_blocked; }
-
-    bool is_wino_desc() const { return format_kind() == dnnl_format_kind_wino; }
-
-    bool is_rnn_packed_desc() const {
-      return format_kind() == dnnl_format_kind_rnn_packed;
-    }
-
     inline bool is_plain() const {
       return is_blocking_desc() && blocking_desc().inner_nblks == 0;
     };
@@ -158,94 +147,6 @@ class tensor : public memory {
           && blk.inner_idxs[0] == 1 && blk.inner_blks[0] == 4;
     }
 
-    /** returns true if data is dense in memory */
-    bool is_dense(bool with_padding = false) const {
-      if (format_kind() == dnnl_format_kind_undef ||
-          format_kind() == dnnl_format_kind_any)
-        return false;
-
-      auto type_to_size = [](data_type adata_type) {
-        switch (adata_type) {
-          case data_type::f16:
-          case data_type::bf16:
-            return 2;
-          case data_type::f32:
-          case data_type::s32:
-            return 4;
-          case data_type::s8:
-          case data_type::u8:
-            return 1;
-          case data_type::undef:
-          default:
-            IDEEP_ENFORCE(0, "unknown data type");
-        }
-      };
-
-      return nelems(with_padding) * type_to_size(get_data_type()) == get_size();
-    }
-
-    /** returns physical offset by logical one. logical offset is represented by
-     * an array \param pos. if \param is_pos_padded is true \param pos
-     * represents the position in already padded area */
-    dim_t off_v(const dims_t pos, bool is_pos_padded = false) const {
-      const blocking_desc_t &blk = blocking_desc();
-
-      dims_t pos_copy = {0};
-      for (int d = 0; d < ndims(); ++d)
-        pos_copy[d] = pos[d] + (is_pos_padded ? 0 : padded_offsets()[d]);
-
-      dim_t phys_offset = offset0();
-
-      if (blk.inner_nblks > 0) {
-        dim_t blk_stride = 1;
-        for (int iblk = blk.inner_nblks - 1; iblk >= 0; --iblk) {
-          const int d = blk.inner_idxs[iblk];
-
-          dim_t p;
-          /* switch to faster 32-bit division when possible.
-           * inner blocks always fit 32-bit. */
-          if (pos_copy[d] <= INT32_MAX) {
-            p = (int32_t)pos_copy[d] % (int32_t)blk.inner_blks[iblk];
-            pos_copy[d] = (int32_t)pos_copy[d] / (int32_t)blk.inner_blks[iblk];
-          } else {
-            p = pos_copy[d] % blk.inner_blks[iblk];
-            pos_copy[d] /= blk.inner_blks[iblk];
-          }
-
-          phys_offset += p * blk_stride;
-
-          blk_stride *= blk.inner_blks[iblk];
-        }
-      }
-
-      for (int d = 0; d < ndims(); ++d) {
-        const dim_t p = pos_copy[d];
-        phys_offset += p * blk.strides[d];
-      }
-
-      return phys_offset;
-    }
-
-    /** returns physical offset by logical one. logical offset is represented by
-     * a scalar \param l_offset. if \param is_pos_padded is true, \param
-     * l_offset represents logical offset in already padded area */
-    dim_t off_l(dim_t l_offset, bool is_pos_padded = false) const {
-      dims_t pos;
-      for (int rd = 0; rd < ndims(); ++rd) {
-        const int d = ndims() - 1 - rd;
-        const dim_t cur_dim = is_pos_padded ? padded_dims()[d] : dims()[d];
-        /* switch to faster 32-bit division when possible. */
-        if (l_offset <= INT32_MAX && cur_dim <= INT32_MAX) {
-          pos[d] = (int32_t)l_offset % (int32_t)cur_dim;
-          l_offset = (int32_t)l_offset / (int32_t)cur_dim;
-        } else {
-          pos[d] = l_offset % cur_dim;
-          l_offset /= cur_dim;
-        }
-      }
-      return off_v(pos, is_pos_padded);
-    }
-
     desc to_format(format_tag aformat_tag) const {
       return desc(get_dims(), get_data_type(), aformat_tag);
     }
@@ -253,7 +154,7 @@ class tensor : public memory {
     desc to_format_any() const {
       return desc(get_dims(), get_data_type(), format_tag::any);
     }
-    
+
     desc to_default_format() const {
       return desc(get_dims(), get_data_type());
     }
@@ -271,7 +172,7 @@ class tensor : public memory {
 
     desc to_grouped(int groups) const {
       auto ret = clone();
-      
+
       auto &dims = ret.data.dims;
       auto &paddim = ret.data.padded_dims;
       auto &blk = ret.data.format_desc.blocking;
@@ -478,6 +379,14 @@ class tensor : public memory {
     dim_t offset0() const { return data.offset0; }
 
     inline format_kind_t format_kind() const { return data.format_kind; }
+
+    bool is_blocking_desc() const { return format_kind() == dnnl_blocked; }
+
+    bool is_wino_desc() const { return format_kind() == dnnl_format_kind_wino; }
+
+    bool is_rnn_packed_desc() const {
+      return format_kind() == dnnl_format_kind_rnn_packed;
+    }
 
     const blocking_desc_t &blocking_desc() const {
       IDEEP_ENFORCE(is_blocking_desc(),
