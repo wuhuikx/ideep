@@ -67,12 +67,17 @@ class tensor : public memory {
 
     /// Returns dimension vector
     inline dims get_dims() const {
-      return dims(data.dims, data.dims + data.ndims);
+      return dims(data.dims, data.dims + ndims());
     }
 
     /// Returns descriptor data type
     inline data_type get_data_type() const {
       return static_cast<data_type>(data.data_type);
+    }
+
+    inline dims get_strides() const {
+      auto& strides = blocking_strides();
+      return dims(strides, strides + ndims());
     }
 
     /** returns true if memory descriptor is zero */
@@ -239,10 +244,6 @@ class tensor : public memory {
         }
       }
       return off_v(pos, is_pos_padded);
-    }
-
-    bool is_public_format() const {
-      return is_blocking_desc() && blocking_desc().inner_nblks == 0;
     }
 
     desc to_format(format_tag aformat_tag) const {
@@ -679,6 +680,8 @@ class tensor : public memory {
   /// Returns dimension vector
   inline dims get_dims() const { return get_desc().get_dims(); }
 
+  inline dims get_strides() const { return get_desc().get_strides(); }
+
   /// Return element number of the param.
   /// The number is the meaning values for a tensor, instead of whole buffer.
   /// It is the number without counting in paddings.
@@ -694,8 +697,9 @@ class tensor : public memory {
     return get_desc().is_zero() && get_data_handle() == nullptr;
   }
 
+  // "public format" has the same semantic as DNNL's "plain format"
   inline bool is_public_format() const {
-    return get_desc().is_public_format();
+    return get_desc().is_plain();
   }
 
   inline static format_tag get_default_format(const dims &adims) {
@@ -813,12 +817,10 @@ class tensor : public memory {
 
   /// Convert the tensor to public format, and f32 data type by default
   // XPZ: TODO: scale_out ??
-  inline tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
-    auto dst = buffer ? tensor(get_dims(), get_data_type(), buffer)
-                      : tensor(get_dims(), get_data_type());
-    // auto public_desc =
-    //     is_public_format() ? get_desc() : desc(get_dims(), get_data_type());
-    // auto dst = buffer ? tensor(public_desc, buffer) : tensor(public_desc);
+  tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
+    auto public_desc =
+        is_public_format() ? get_desc() : desc(get_dims(), get_data_type());
+    auto dst = buffer ? tensor(public_desc, buffer) : tensor(public_desc);
 
     auto groups = 1;
     if ((groups = get_desc().get_groups()) > 1) {
