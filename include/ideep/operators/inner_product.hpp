@@ -129,11 +129,13 @@ struct inner_product_backward_data : public dnnl::inner_product_backward_data {
     auto diff_src_desc =
         tensor::desc(diff_src_dims, diff_dst.get_data_type(), tag::any);
 
-    auto forward_hints = inner_product_forward::primitive_desc(
-        {prop_kind::forward, diff_src_desc, weights_desc, diff_dst_desc},
-        aengine);
-    auto pd = primitive_desc({diff_src_desc, weights_desc, diff_dst_desc},
-                             aengine, forward_hints);
+    auto forward_hints =
+        inner_product_forward::primitive_desc(
+            {prop_kind::forward, diff_src_desc, weights_desc, diff_dst_desc},
+            aengine);
+
+    auto pd = primitive_desc(
+        {diff_src_desc, weights_desc, diff_dst_desc}, aengine, forward_hints);
 
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());

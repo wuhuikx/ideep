@@ -54,7 +54,7 @@ struct convolution_forward : public dnnl::convolution_forward {
       const dims& strides = {1, 1},
       const dims& padding_l = {0, 0},
       const dims& padding_r = {0, 0},
-      const dims& dilates = {0, 0},
+      const dims& dilates = {1, 1},
       int groups = 1,
       algorithm aalgorithm = algorithm::convolution_direct,
       prop_kind aprop_kind = prop_kind::forward,
@@ -97,8 +97,7 @@ struct convolution_forward : public dnnl::convolution_forward {
 
     dims x_dims = { mb, ic, h, w };
     dims y_dims = { mb, oc, oh, ow };
-    auto y_dtype =
-        dtype != data_type::s8 ? dtype : data_type::s32;
+    auto y_dtype = dtype != data_type::s8 ? dtype : data_type::s32;
     tensor::desc src_desc(x_dims, x_dtype);
     tensor::desc dst_desc(y_dims, y_dtype);
 

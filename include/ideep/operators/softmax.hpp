@@ -34,7 +34,7 @@ struct softmax_backward : public dnnl::softmax_backward {
                       const engine& aengine = engine::cpu_engine()) {
 
     auto forward_hints = softmax_forward::primitive_desc(
-      {prop_kind::forward_inference, dst.get_desc(), softmax_axis}, aengine);
+        {prop_kind::forward_inference, dst.get_desc(), softmax_axis}, aengine);
 
     auto pd =
         primitive_desc({diff_dst.get_desc(), dst.get_desc(), softmax_axis},

@@ -24,7 +24,7 @@ struct lrn_forward : public dnnl::lrn_forward {
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     dst.reinit_if_necessary(pd.dst_desc());
 
-    exec_args args = {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
+    exec_args args {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
 
     bool with_workspace = aprop_kind == prop_kind::forward_training;
     if (with_workspace) {
@@ -66,9 +66,9 @@ struct lrn_backward : public dnnl::lrn_backward {
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
 
-    exec_args args = {{DNNL_ARG_SRC, src},
-                      {DNNL_ARG_DIFF_DST, expected_diff_dst},
-                      {DNNL_ARG_DIFF_SRC, diff_src}};
+    exec_args args {{DNNL_ARG_SRC, src},
+                    {DNNL_ARG_DIFF_DST, expected_diff_dst},
+                    {DNNL_ARG_DIFF_SRC, diff_src}};
 
     if (dst.has_workspace()) {
       auto expected_workspace =

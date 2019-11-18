@@ -29,7 +29,7 @@ struct pooling_forward : public dnnl::pooling_forward {
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     dst.reinit_if_necessary(pd.dst_desc());
-    exec_args args = {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
+    exec_args args {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
     if (with_workspace) {
       dst.init_workspace(pd.workspace_desc());
       args.insert({DNNL_ARG_WORKSPACE, dst.get_workspace()});
@@ -60,8 +60,8 @@ struct pooling_backward : public dnnl::pooling_backward {
         aengine, forward_hints);
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     diff_src.reinit_if_necessary(pd.diff_src_desc());
-    exec_args args = {{DNNL_ARG_DIFF_DST, expected_diff_dst},
-                      {DNNL_ARG_DIFF_SRC, diff_src}};
+    exec_args args {{DNNL_ARG_DIFF_DST, expected_diff_dst},
+                    {DNNL_ARG_DIFF_SRC, diff_src}};
 
     if (dst.has_workspace()) {
       auto expected_workspace =
