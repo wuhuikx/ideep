@@ -20,18 +20,18 @@ class tensor : public memory {
 
     desc() : memory::desc() {};
 
-    desc(const memory::desc &adesc) : memory::desc(adesc.data) {};
+    desc(const memory::desc &adesc) : memory::desc(adesc.data) { init(); };
 
-    desc(const dnnl_memory_desc_t &adata) : memory::desc(adata) {};
+    desc(const dnnl_memory_desc_t &adata) : memory::desc(adata) { init(); };
 
     desc(const dims &adims, data_type adata_type, format_tag aformat_tag)
-        : memory::desc(adims, adata_type, aformat_tag) {}
+        : memory::desc(adims, adata_type, aformat_tag) { init(); }
 
     desc(const dims &adims, data_type adata_type)
-        : memory::desc(adims, adata_type, get_default_format(adims)) {}
+        : memory::desc(adims, adata_type, get_default_format(adims)) { init(); }
 
     desc(const dims &adims, data_type adata_type, const dims &astrides)
-        : memory::desc(adims, adata_type, astrides) {}
+        : memory::desc(adims, adata_type, astrides) { init(); }
 
     /// Returns number of dimensions
     inline int ndims() const { return data.ndims; }
@@ -466,6 +466,10 @@ class tensor : public memory {
 
    private:
 
+    void init() {
+      set_groups(1);
+    }
+
     const dims_t &padded_dims() const { return data.padded_dims; }
 
     const dims_t &padded_offsets() const { return data.padded_offsets; }
@@ -810,10 +814,20 @@ class tensor : public memory {
   /// Convert the tensor to public format, and f32 data type by default
   // XPZ: TODO: scale_out ??
   inline tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
-    auto public_desc =
-        is_public_format() ? get_desc() : desc(get_dims(), get_data_type());
-    auto dst = buffer ? tensor(public_desc, buffer): tensor(public_desc);
-    this->reorder_to(dst);
+    auto dst = buffer ? tensor(get_dims(), get_data_type(), buffer)
+                      : tensor(get_dims(), get_data_type());
+    // auto public_desc =
+    //     is_public_format() ? get_desc() : desc(get_dims(), get_data_type());
+    // auto dst = buffer ? tensor(public_desc, buffer) : tensor(public_desc);
+
+    auto groups = 1;
+    if ((groups = get_desc().get_groups()) > 1) {
+      auto mask_src = this->make_grouped_weights(groups);
+      auto mask_dst = dst.make_grouped_weights(groups);
+      mask_src.reorder_to(mask_dst);
+    } else
+      this->reorder_to(dst);
+
     return dst;
   }
 
@@ -826,8 +840,8 @@ class tensor : public memory {
   /// Fill the tensor with a src tensor
   void feed_from(const tensor &src) {
     auto groups = 1;
-    if ((groups = get_desc().get_groups()) != 1 ||
-        (groups = src.get_desc().get_groups()) != 1) {
+    if ((groups = get_desc().get_groups()) > 1 ||
+        (groups = src.get_desc().get_groups()) > 1) {
       auto mask_dst = this->make_grouped_weights(groups);
       auto mask_src = src.make_grouped_weights(groups);
       mask_src.reorder_to(mask_dst);
