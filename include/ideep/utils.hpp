@@ -30,88 +30,6 @@
 namespace ideep {
 namespace utils {
 
-// Shallow copied vector
-template <class T, class Alloc = std::allocator<T>>
-class s_vector {
-public:
-  using size_type = typename std::vector<T, Alloc>::size_type;
-  using reference = typename std::vector<T, Alloc>::reference;
-  using const_reference = typename std::vector<T, Alloc>::const_reference;
-
-  s_vector() : n_elems_(0), storage_() {}
-
-  explicit s_vector(size_type count, const Alloc& alloc = Alloc())
-    : n_elems_(count) {
-    Alloc dup_alloc(alloc);
-
-    storage_.reset(new (dup_alloc.allocate(count)) T [count] (),
-       [dup_alloc, count](T* p) mutable {
-      for (int i =0; i < count; i ++)
-        p[i].~T();
-      dup_alloc.deallocate(p, count);
-    });
-  }
-
-  s_vector(std::initializer_list<T> init, const Alloc& alloc = Alloc())
-    : storage_(init.size(), alloc) {
-      auto arr = storage_.get();
-      auto src = init.begin();
-      for (int i = 0; i < init.size(); i ++)
-        arr[i] = src[i];
-  }
-
-  s_vector(const s_vector& other)
-    : n_elems_(other.n_elems_), storage_(other.storage_) {}
-
-  s_vector(s_vector&& other) noexcept
-    : n_elems_(other.n_elems_), storage_(std::move(other.storage_)) {}
-
-  s_vector& operator=(const s_vector& other) {
-    storage_ = other.storage_;
-    n_elems_ = other.n_elems_;
-    return *this;
-  }
-
-  s_vector& operator=(s_vector&& other) noexcept {
-    storage_ = std::move(other.storage_);
-    n_elems_ = other.n_elems_;
-    return *this;
-  }
-
-  reference operator[](size_type pos) {
-    return storage_.get()[pos];
-  }
-
-  const_reference operator[] (size_type pos) const {
-    return storage_.get()[pos];
-  }
-
-  size_type size() const noexcept {
-    return n_elems_;
-  }
-
-  void assign(size_type count, const T& val, const Alloc& alloc = Alloc()) {
-    Alloc dup_alloc(alloc);
-
-    storage_.reset(new (dup_alloc.allocate(count)) T [count] (),
-       [dup_alloc, count](T* p) mutable {
-      for (int i =0; i < count; i ++)
-        p[i].~T();
-      dup_alloc.deallocate(p, count);
-    });
-
-    auto* elems = storage_.get();
-    for (int i =0; i < count; i ++)
-      elems[i] = val;
-
-    n_elems_ = count;
-  }
-
-protected:
-  size_type n_elems_;
-  std::shared_ptr<T> storage_;
-};
-
 static void bernoulli_generate(const long n, const double p, int* r) {
 #ifndef IDEEP_USE_MKL
   IDEEP_ENFORCE(0, "can not use bernoulli_generate without MKL support");
@@ -140,13 +58,23 @@ static void bernoulli_generate(const long n, const double p, int* r) {
 #endif
 }
 
-static inline memory::dims get_compatible_dilates(const memory::dims& dilates) {
-    if (!dilates.empty() && !IDEEP_STD_ANY_LE(dilates, 0)) {
-      auto dilates_in = dilates;
-      IDEEP_STD_EACH_SUB(dilates_in, 1);
-      return dilates_in;
-    }
-    return {0, 0};
+template <typename F, typename T,
+          typename U = decltype(std::declval<F>()(std::declval<T>()))>
+std::vector<U> fmap(const std::vector<T>& vec, F f) {
+  std::vector<U> result;
+  std::transform(vec.begin(), vec.end(), std::back_inserter(result), f);
+  return result;
+}
+
+template <typename T>
+inline bool any_le(const std::vector<T>& v, T i) {
+  return std::any_of(v.begin(), v.end(), [i](T k) { return k <= i; });
+}
+
+inline memory::dims get_compatible_dilates(const memory::dims& dilates) {
+  if (!dilates.empty() && !any_le(dilates, 0L))
+    return fmap(dilates, [](dim x) { return x - 1; });
+  return {0, 0};
 }
 
 inline dnnl::algorithm rnn_kind_to_algorithm(rnn_kind rnn) {
@@ -171,14 +99,6 @@ inline dnnl::algorithm rnn_kind_to_activation(rnn_kind rnn) {
   }
 }
 
-template <typename F, typename T,
-          typename U = decltype(std::declval<F>()(std::declval<T>()))>
-std::vector<U> fmap(const std::vector<T>& vec, F f) {
-  std::vector<U> result;
-  std::transform(vec.begin(), vec.end(), std::back_inserter(result), f);
-  return result;
-}
-
 /** sorts an array of values using @p comparator. While sorting the array
  * of value, the function permutes an array of @p keys accordingly.
  *
@@ -187,26 +107,41 @@ std::vector<U> fmap(const std::vector<T>& vec, F f) {
  */
 template <typename T, typename U, typename F>
 inline void simultaneous_sort(T *vals, U *keys, size_t size, F comparator) {
-    if (size == 0) return;
+  if (size == 0) return;
 
-    for (size_t i = 0; i < size - 1; ++i) {
-        bool swapped = false;
-
-        for (size_t j = 0; j < size - i - 1; j++) {
-            if (comparator(vals[j], vals[j + 1]) > 0) {
-                std::swap(vals[j], vals[j + 1]);
-                if (keys) std::swap(keys[j], keys[j + 1]);
-                swapped = true;
-            }
-        }
-
-        if (swapped == false) break;
+  for (size_t i = 0; i < size - 1; ++i) {
+    bool swapped = false;
+    for (size_t j = 0; j < size - i - 1; j++) {
+      if (comparator(vals[j], vals[j + 1]) > 0) {
+        std::swap(vals[j], vals[j + 1]);
+        if (keys) std::swap(keys[j], keys[j + 1]);
+        swapped = true;
+      }
     }
+
+    if (swapped == false) break;
+  }
 }
 
 template <typename T>
 inline T rnd_up(const T a, const T b) {
     return (a + b - 1) / b * b;
+}
+
+inline int op_scale_mask(dim scale_size) {
+  return scale_size > 1 ? 2 : 0;
+}
+
+inline int tensor_scale_mask(dim scale_size, bool grouped) {
+  return scale_size > 1 ? grouped ? 3 : 1 : 0;
+}
+
+inline uintptr_t mod_ptr(void *ptr, size_t bytes) {
+  return reinterpret_cast<uintptr_t>(ptr) & (bytes - 1);
+}
+
+inline bool is_aligned_ptr(void *ptr, size_t bytes) {
+  return mod_ptr(ptr, bytes) == 0;
 }
 
 }

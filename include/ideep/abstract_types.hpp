@@ -21,62 +21,7 @@ namespace ideep {
 #define IDEEP_EXPORT
 #endif
 
-#ifndef NDEBUG
-#define IDEEP_ENFORCE(condition, message) \
-  do {  \
-    error::wrap_c_api((condition) \
-        ? dnnl_success : dnnl_invalid_arguments, (message));  \
-  } while(false)
-#else
-#define IDEEP_ENFORCE(condition, message)
-#endif
-
-#define IDEEP_STD_ANY_LE(v, i) \
-  std::any_of(v.begin(), v.end(), []( \
-        std::remove_reference<decltype(v)>::type::value_type k){return k <= i;})
-
-#define IDEEP_STD_EACH_SUB(v, i) \
-  for (auto it = v.begin(); it != v.end(); it++) {*it -= i;}
-
-#define IDEEP_MOD_PTR(ptr, bytes) (((uintptr_t)(ptr)) & ((bytes) - 1))
-#define IDEEP_IS_ALIGNED_PTR(ptr, bytes) ((IDEEP_MOD_PTR(ptr, bytes)) == 0)
-
-struct error: public std::exception {
-    dnnl_status_t status;
-    const char* message;
-
-    error(dnnl_status_t astatus, const char* amessage)
-        : status(astatus), message(amessage) {}
-
-    static void wrap_c_api(dnnl_status_t status, const char* message) {
-      if (status != dnnl_success) {
-        throw error(status, message);
-      }
-    }
-};
-
-/// Same class for resource management, except public default constructor
-/// Movable support for better performance
-template <typename T, typename traits = dnnl::handle_traits<T>>
-class c_wrapper :
-  public std::shared_ptr<typename std::remove_pointer<T>::type> {
-  using super = std::shared_ptr<typename std::remove_pointer<T>::type>;
-public:
-  c_wrapper(T t = nullptr, bool weak = false)
-    : super(t, [weak]() {
-        auto dummy = [](T) { return decltype(traits::destructor(0))(0); };
-        return weak? dummy : traits::destructor; }()) {}
-
-  using super::super;
-  /// Resets the value of a C handle.
-  void reset(T t, bool weak = false) {
-    auto dummy_destructor = [](T) { return decltype(traits::destructor(0))(0); };
-    super::reset(t, weak ? dummy_destructor : traits::destructor);
-  }
-};
-
-using scale_t = std::vector<float>;
-
+using error = dnnl::error;
 using memory = dnnl::memory;
 using format_tag = memory::format_tag;
 using tag = memory::format_tag;
@@ -89,7 +34,18 @@ using prop_kind = dnnl::prop_kind;
 using algorithm = dnnl::algorithm;
 using batch_normalization_flag = dnnl::normalization_flags;
 using query = dnnl::query;
+using scale_t = std::vector<float>;
 using exec_args = std::unordered_map<int, memory>;
+
+#ifndef NDEBUG
+#define IDEEP_ENFORCE(condition, message) \
+  do {  \
+    error::wrap_c_api((condition) \
+        ? dnnl_success : dnnl_invalid_arguments, (message));  \
+  } while(false)
+#else
+#define IDEEP_ENFORCE(condition, message)
+#endif
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
 #define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
@@ -134,8 +90,8 @@ struct engine : public dnnl::engine {
         malloc(utils::allocator::malloc),
         free(utils::allocator::free) {}
 
-  void set_allocator(std::function<void*(int)> malloc,
-                     std::function<void(void*)> free) {
+  void set_allocator(const std::function<void*(int)>& malloc,
+                     const std::function<void(void*)>& free) {
     this->malloc = malloc;
     this->free = free;
   }
