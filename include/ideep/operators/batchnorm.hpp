@@ -130,8 +130,8 @@ struct batch_normalization_forward_training
                       tensor& variance, tensor& running_mean,
                       tensor& running_var, float momentum, float epsilon) {
    compute(src, scale, shift, dst, mean, variance, momentum, epsilon);
-   ideep::sum::compute({1 - momentum, momentum}, {running_mean, mean}, running_mean);
-   ideep::sum::compute({1 - momentum, momentum}, {running_var, variance}, running_var);
+   ideep::sum::compute({momentum, 1 - momentum}, {running_mean, mean}, running_mean);
+   ideep::sum::compute({momentum, 1 - momentum}, {running_var, variance}, running_var);
   }
 };
 
