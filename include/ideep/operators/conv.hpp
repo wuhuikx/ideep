@@ -179,8 +179,9 @@ private:
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
     // TODO: XPZ: is it ok to use src type as dst type?
-    tensor::desc dst_desc(dst_dims, src.get_data_type());
-
+    auto dst_desc = attr.has_op_kind(kind::sum)
+                        ? dst.get_desc()
+                        : tensor::desc(dst_dims, src.get_data_type());
     auto pd = get_primitive_desc<with_bias>(
         src.get_desc(), weights_.get_desc(), bias.get_desc(), dst_desc,
         strides, dilates_, padding_l, padding_r, attr, aalgorithm,

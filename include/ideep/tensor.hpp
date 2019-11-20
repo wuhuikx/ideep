@@ -247,6 +247,12 @@ class tensor : public memory {
       return ret;
     }
 
+    bool has_same_shape_as(const desc& that) {
+      if (data.ndims != that.data.ndims)
+        return false;
+      return utils::array_cmp(data.dims, that.data.dims, data.ndims);
+    }
+
     desc permute(const std::vector<int> &permute_axes = {}) const {
       if (ndims() <= 1) {
         return clone();
@@ -538,8 +544,12 @@ class tensor : public memory {
   }
 
   void reinit_if_necessary(const memory::desc &expected_desc) {
-    if (expected_desc != get_desc() || !get_data_handle()) {
-      reinit(expected_desc, get_engine());
+    if (expected_desc != get_desc()) {
+      if (get_desc().has_same_shape_as(expected_desc)) {
+        to_format(desc(expected_desc));
+      } else {
+        reinit(expected_desc, get_engine());
+      }
     }
   }
 
@@ -746,14 +756,6 @@ class tensor : public memory {
     return dst;
   }
 
-  inline void to_format(const desc& adesc) {
-    if (get_desc() != adesc) {
-      auto dst = tensor(adesc);
-      this->reorder_to(dst);
-      *this = std::move(dst);
-    }
-  }
-
   inline void to_default_format() {
     to_format(get_desc().to_default_format());
   }
@@ -880,6 +882,14 @@ class tensor : public memory {
         dnnl_memory_create(&result, &adesc.data, aengine.get(), ahandle),
         "could not create a memory");
     reset(result);
+  }
+
+  inline void to_format(const desc& adesc) {
+    if (get_desc() != adesc) {
+      auto dst = tensor(adesc);
+      this->reorder_to(dst);
+      *this = std::move(dst);
+    }
   }
 
   bool has_same_volume(const dims &new_dims) const {
