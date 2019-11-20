@@ -213,9 +213,6 @@ private:
     }
 
     super(pd).execute(stream::default_stream(), args);
-
-    // XPZ: TODO: ???
-    diff_weights = std::move(diff_weights.to_public());
   }
 };
 

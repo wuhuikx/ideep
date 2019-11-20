@@ -742,10 +742,20 @@ class tensor : public memory {
     return dst;
   }
 
+  inline void to_format(const desc& adesc) {
+    if (get_desc() != adesc) {
+      auto dst = tensor(adesc);
+      this->reorder_to(dst);
+      *this = std::move(dst);
+    }
+  }
+
+  inline void to_default_format() {
+    to_format(get_desc().to_default_format());
+  }
+
   inline void to_format(format_tag aformat_tag) {
-    auto dst = tensor(get_desc().to_format(aformat_tag));
-    this->reorder_to(dst);
-    *this = std::move(dst);
+    to_format(get_desc().to_format(aformat_tag));
   }
 
   /// Fill the tensor with a src tensor
