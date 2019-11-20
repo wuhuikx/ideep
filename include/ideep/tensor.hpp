@@ -18,6 +18,10 @@ class tensor : public memory {
   struct desc : public memory::desc {
     friend class tensor;
 
+    // avoid conflicts with function desc::dims() and desc::data_type()
+    using dims = typename memory::dims;
+    using data_type = typename memory::data_type;
+
     desc() : memory::desc() {};
 
     desc(const memory::desc &adesc) : memory::desc(adesc.data) { init(); };
