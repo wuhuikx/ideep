@@ -467,8 +467,6 @@ class tensor : public memory {
     reinit(adesc, aengine);
   }
 
-  // XPZ: sugar: unpack desc to top level to avoid nested implicit conversion
-
   // format_tag, buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
          void *ahandle, const engine &aengine = engine::cpu_engine()) {
@@ -680,11 +678,8 @@ class tensor : public memory {
 
   // workaround for issue intel/mkl-dnn#588
   desc _get_unblocked_desc_if_4c_blocked() const {
-    if (get_desc().is_4c_blocked()) {
-      return desc(get_dims(), get_data_type());
-    } else {
-      return get_desc();
-    }
+    auto desc = get_desc();
+    return desc.is_4c_blocked() ? desc.to_default_format() : desc;
   }
 
   // no data copy
@@ -838,18 +833,16 @@ class tensor : public memory {
     return (!is_public_format() || get_data_type() != data_type::f32);
   }
 
-  tensor permute_(const std::vector<int> &permute_axes = {}) {
-    set_desc(get_desc().permute(permute_axes));
-    return *this;
+  tensor& permute_(const std::vector<int> &permute_axes = {}) {
+    return set_desc(get_desc().permute(permute_axes));
   }
 
   tensor permute(const std::vector<int> &permute_axes = {}) const {
     return clone().permute_(permute_axes);
   }
 
-  tensor transpose_(dim dim0, dim dim1) {
-    set_desc(get_desc().transpose(dim0, dim1));
-    return *this;
+  tensor& transpose_(dim dim0, dim dim1) {
+    return set_desc(get_desc().transpose(dim0, dim1));
   }
 
   tensor transpose(dim dim0, dim dim1) const {
@@ -864,7 +857,7 @@ class tensor : public memory {
   /// Set a descriptor into tensor to replace the older one, keep buffer
   /// It is caller's responsibility to make sure the original buffer is large
   /// enough for specified descriptor
-  void set_desc(const desc &new_desc) {
+  tensor& set_desc(const desc &new_desc) {
     // Keep the original management
     auto buf = std::move(buffer_);
     auto ws = std::move(workspace_);
@@ -873,6 +866,7 @@ class tensor : public memory {
     buffer_ = std::move(buf);
     workspace_ = std::move(ws);
     scale_ = std::move(scale);
+    return *this;
   }
 
  private:
