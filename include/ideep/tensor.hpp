@@ -189,7 +189,7 @@ class tensor : public memory {
       return ret;
     }
 
-    desc to_grouped(int groups) const {
+    desc to_grouped(int groups, bool is_deconv = false) const {
       auto grouped_dims = utils::group_dims(get_internal_dims(), groups);
       auto grouped_desc = desc(grouped_dims, get_data_type());
       grouped_desc.set_g(groups);
@@ -362,13 +362,13 @@ class tensor : public memory {
     }
 
     void set_g(dim groups) {
-      auto reserved_size = 64;
+      auto reserved_size = sizeof(((dnnl_memory_extra_desc_t *)0)->reserved);
       auto offset = reserved_size / sizeof(dim) - 1;
       reinterpret_cast<dim *>(data.extra.reserved)[offset] = groups;
     }
 
     dim g() const {
-      auto reserved_size = 64;
+      auto reserved_size = sizeof(((dnnl_memory_extra_desc_t *)0)->reserved);
       auto offset = reserved_size / sizeof(dim) - 1;
       return reinterpret_cast<const dim *>(data.extra.reserved)[offset];
     }
@@ -717,12 +717,13 @@ class tensor : public memory {
   }
 
   /// Fill the tensor with a src tensor
-  void feed_from(const tensor &src) {
+  /// XPZ: TODO: may replace is_deconv_weights with a enum for other purposes
+  void feed_from(const tensor &src, bool is_deconv_weights = false) {
     auto groups = 1;
     if ((groups = get_desc().g()) > 1 ||
         (groups = src.get_desc().g()) > 1) {
-      auto mask_dst = this->make_grouped_weights(groups);
-      auto mask_src = src.make_grouped_weights(groups);
+      auto mask_dst = this->make_grouped_weights(groups, is_deconv_weights);
+      auto mask_src = src.make_grouped_weights(groups, is_deconv_weights);
       mask_src.reorder_to(mask_dst);
     } else
       src.reorder_to(*this);
