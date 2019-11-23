@@ -1,0 +1,1140 @@
+diff --git a/include/ideep/abstract_types.hpp b/include/ideep/abstract_types.hpp
+index ab532d5..bab2ac6 100644
+--- a/include/ideep/abstract_types.hpp
++++ b/include/ideep/abstract_types.hpp
+@@ -38,6 +38,11 @@ namespace ideep {
+ #define IDEEP_STD_EACH_SUB(v, i) \
+   for (auto it = v.begin(); it != v.end(); it++) {*it -= i;}
+ 
++// For convolution with grouped weights, the ndims must be 5 (goihw) or 6
++// (goidhw)
++#define IDEEP_IS_GROUPED(id, wd) \
++  (((id == 4 && (wd).size() == 5) || (id == 5 && (wd).size() == 6)) ? 1 : 0)
++
+ #define IDEEP_MOD_PTR(ptr, bytes) (((uintptr_t)(ptr)) & ((bytes) - 1))
+ #define IDEEP_IS_ALIGNED_PTR(ptr, bytes) ((IDEEP_MOD_PTR(ptr, bytes)) == 0)
+ 
+@@ -107,8 +112,8 @@ const std::map<data_type, int> dt_max_map
+ };
+ 
+ enum lowp_kind {
+-  u8s8 = 0,
+-  s8s8 = 1
++  LOWP_U8S8 = 0,
++  LOWP_S8S8 = 1
+ };
+ 
+ enum rnn_kind {
+diff --git a/include/ideep/attributes.hpp b/include/ideep/attributes.hpp
+index e4bde06..1636ded 100644
+--- a/include/ideep/attributes.hpp
++++ b/include/ideep/attributes.hpp
+@@ -6,27 +6,64 @@
+ namespace ideep {
+ 
+ struct post_ops : public dnnl::post_ops {
+-
+-  bool has_op_kind(dnnl::primitive::kind op_kind) const {
+-    for (int i = 0; i < len(); i++)
+-      if (op_kind == kind(i))
+-        return true;
+-    return false;
++ public:
++  // bool has_op_kind(dnnl::primitive::kind op_kind) const {
++  //   for (int i = 0; i < len(); i++)
++  //     if (op_kind == kind(i))
++  //       return true;
++  //   return false;
++  // }
++
++  // bool non_negitive_output() const {
++  //   // auto last = len() - 1;
++  //   // if (last < 0) {
++  //   //   return false;
++  //   // }
++
++  // auto params = get_params(last);
++  // if (std::get<0>(params) != kind::eltwise || std::get<1>(params) <= 0.f ||
++  //     std::get<2>(params) != 0.f || std::get<3>(params) != 0.f ||
++  //     std::get<4>(params) != algorithm::eltwise_relu)
++  //   return false;
++
++  //   // return true;
++  // }
++  // Helper factory
++  static post_ops sum(float scale = 1.0) {
++    post_ops ret;
++    ret.append(dnnl::primitive::kind::sum, scale, 1.0, 0.0, algorithm::eltwise_relu);
++    return ret;
+   }
+ 
+-  bool non_negitive_output() const {
+-    // auto last = len() - 1;
+-    // if (last < 0) {
+-    //   return false;
+-    // }
++  static post_ops relu(float scale = 1.f, float alpha = 0.f, float beta = 0.f) {
++    post_ops ret;
++    ret.append(dnnl::primitive::kind::eltwise, scale, alpha, beta, algorithm::eltwise_relu);
++    return ret;
++  }
+ 
+-    // auto params = get_params(last);
+-    // if (std::get<0>(params) != kind::eltwise || std::get<1>(params) <= 0.f ||
+-    //     std::get<2>(params) != 0.f || std::get<3>(params) != 0.f ||
+-    //     std::get<4>(params) != algorithm::eltwise_relu)
+-    //   return false;
++  static post_ops residual(
++      float sum_scale = 1.0,
++      float relu_scale = 1.0,
++      float alpha = 0.f,
++      float beta = 0.f) {
++    post_ops ret;
++    ret.append(dnnl::primitive::kind::sum, sum_scale, 1.0, 0.0, algorithm::eltwise_relu);
++    ret.append(dnnl::primitive::kind::eltwise, relu_scale, alpha, beta, algorithm::eltwise_relu);
++    return ret;
++  }
+ 
+-    // return true;
++  void append(dnnl::primitive::kind op_kind, float scale, float alpha, float beta, algorithm alg) {
++    switch(op_kind) {
++      case dnnl::primitive::kind::sum:
++        error::wrap_c_api(dnnl_post_ops_append_sum(get(), scale), "could not append sum");
++        break;
++      case dnnl::primitive::kind::eltwise:
++        error::wrap_c_api(dnnl_post_ops_append_eltwise(
++              get(), scale, convert_to_c(alg), alpha, beta), "could not append eltwise");
++        break;
++      default:
++        error::wrap_c_api(dnnl_invalid_arguments, "Unsupport op kind");
++    }
+   }
+ };
+ 
+@@ -67,7 +104,6 @@ public:
+     return attr;
+   }
+ 
+-
+   static inline attr_t residual(float sum_scale = 1.0, float relu_scale = 1.0,
+                                 float alpha = 0.f, float beta = 0.f) {
+     attr_t attr;
+@@ -83,8 +119,64 @@ public:
+     attr.set_post_ops(po);
+     return attr;
+   }
++
++  inline bool has_op_kind(dnnl::primitive::kind op_kind) const {
++    auto po = get_post_ops();
++    for (int i = 0; i < po.len(); i++)
++      if (op_kind == po.kind(i))
++        return true;
++    return false;
++  }
++
++  inline std::tuple<dnnl::primitive::kind, float, float, float, algorithm> get_params (
++      int index) const {
++    auto po = get_post_ops();
++    IDEEP_ENFORCE(index < po.len(), "post_ops index is out of range");
++
++    dnnl_alg_kind_t c_alg = dnnl_eltwise_relu;
++    float scale = 1.0, alpha = 1.0, beta = 0.0;
++
++    // auto akind = op_kind(index);
++    auto akind = static_cast<dnnl::primitive::kind>(
++        dnnl_post_ops_get_kind(po.get(), index));
++    switch (akind) {
++      case kind::sum:
++        error::wrap_c_api(
++            dnnl_post_ops_get_params_sum(po.get(), index, &scale),
++            "could not get sum params");
++        break;
++      case kind::eltwise:
++        error::wrap_c_api(
++            dnnl_post_ops_get_params_eltwise(
++                po.get(), index, &scale, &c_alg, &alpha, &beta),
++            "could not get eltwise params");
++        break;
++      default:
++        error::wrap_c_api(dnnl_invalid_arguments, "could not get params");
++        break;
++    }
++
++    return std::make_tuple(
++        akind, scale, alpha, beta, static_cast<algorithm>(c_alg));
++  }
++
++  inline bool non_negitive_output() const {
++    auto po = get_post_ops();
++    auto last = po.len() - 1;
++    if (last < 0) {
++      return false;
++    }
++
++    auto params = get_params(last);
++    if (std::get<0>(params) != kind::eltwise || std::get<1>(params) <= 0.f ||
++        std::get<2>(params) != 0.f || std::get<3>(params) != 0.f ||
++        std::get<4>(params) != algorithm::eltwise_relu)
++      return false;
++
++    return true;
++  }
+ };
+ 
+ }  // namespace ideep
+ 
+-#endif
+\ No newline at end of file
++#endif
+diff --git a/include/ideep/operators/conv.hpp b/include/ideep/operators/conv.hpp
+index e44ee2c..cf3df97 100644
+--- a/include/ideep/operators/conv.hpp
++++ b/include/ideep/operators/conv.hpp
+@@ -8,43 +8,85 @@ struct convolution_forward : public dnnl::convolution_forward {
+   using super = dnnl::convolution_forward;
+ 
+   // fp32 w/ bias
+-  static void compute(const tensor& src,
+-                      const tensor& weights,
+-                      const tensor& bias,
+-                      const dims& dst_dims,
+-                      tensor& dst,
+-                      const dims& strides,
+-                      const dims& dilates,
+-                      const dims& padding_l,
+-                      const dims& padding_r,
+-                      int groups,
+-                      const attr_t& attr = attr_t(),
+-                      algorithm aalgorithm = algorithm::convolution_direct,
+-                      prop_kind aprop_kind = prop_kind::forward,
+-                      const engine& aengine = engine::cpu_engine()) {
++  static void compute(
++      const tensor& src,
++      const tensor& weights,
++      const tensor& bias,
++      const dims& dst_dims,
++      tensor& dst,
++      const dims& strides,
++      const dims& dilates,
++      const dims& padding_l,
++      const dims& padding_r,
++      int groups,
++      const scale_t& src_scales = scale_t(),
++      const scale_t& weights_scales = scale_t(),
++      const scale_t& dst_scales = scale_t(),
++      const attr_t& attr = attr_t(),
++      algorithm aalgorithm = algorithm::convolution_direct,
++      prop_kind aprop_kind = prop_kind::forward,
++      const lowp_kind alowp_kind = LOWP_U8S8,
++      const engine& aengine = engine::cpu_engine()) {
+     compute_impl</*with_bias=*/true>(
+-        src, weights, bias, dst_dims, dst, strides, dilates,
+-        padding_l, padding_r, groups, attr, aalgorithm, aprop_kind, aengine);
++        src,
++        weights,
++        bias,
++        dst_dims,
++        dst,
++        strides,
++        dilates,
++        padding_l,
++        padding_r,
++        groups,
++        src_scales,
++        weights_scales,
++        dst_scales,
++        attr,
++        aalgorithm,
++        aprop_kind,
++        alowp_kind,
++        aengine);
+   }
+ 
+   // fp32 w/o bias
+-  static void compute(const tensor& src,
+-                      const tensor& weights,
+-                      const dims& dst_dims,
+-                      tensor& dst,
+-                      const dims& strides,
+-                      const dims& dilates,
+-                      const dims& padding_l,
+-                      const dims& padding_r,
+-                      int groups,
+-                      const attr_t& attr = attr_t(),
+-                      algorithm aalgorithm = algorithm::convolution_direct,
+-                      prop_kind aprop_kind = prop_kind::forward,
+-                      const engine& aengine = engine::cpu_engine()) {
++  static void compute(
++      const tensor& src,
++      const tensor& weights,
++      const dims& dst_dims,
++      tensor& dst,
++      const dims& strides,
++      const dims& dilates,
++      const dims& padding_l,
++      const dims& padding_r,
++      int groups,
++      const scale_t& src_scales = scale_t(),
++      const scale_t& weights_scales = scale_t(),
++      const scale_t& dst_scales = scale_t(),
++      const attr_t& attr = attr_t(),
++      algorithm aalgorithm = algorithm::convolution_direct,
++      prop_kind aprop_kind = prop_kind::forward,
++      const lowp_kind alowp_kind = LOWP_U8S8,
++      const engine& aengine = engine::cpu_engine()) {
+     static tensor dummy_bias;
+     compute_impl</*with_bias=*/false>(
+-        src, weights, dummy_bias, dst_dims, dst, strides, dilates,
+-        padding_l, padding_r, groups, attr, aalgorithm, aprop_kind, aengine);
++        src,
++        weights,
++        dummy_bias,
++        dst_dims,
++        dst,
++        strides,
++        dilates,
++        padding_l,
++        padding_r,
++        groups,
++        src_scales,
++        weights_scales,
++        dst_scales,
++        attr,
++        aalgorithm,
++        aprop_kind,
++        alowp_kind,
++        aengine);
+   }
+ 
+   // TODO: XPZ: refactor it
+@@ -59,7 +101,9 @@ struct convolution_forward : public dnnl::convolution_forward {
+       algorithm aalgorithm = algorithm::convolution_direct,
+       prop_kind aprop_kind = prop_kind::forward,
+       data_type x_dtype = data_type::f32,
+-      const dims& src_dims = dims()) {
++      const dims& src_dims = dims(),
++      const attr_t& attr = attr_t(),
++      const engine& aengine = engine::cpu_engine()) {
+ 
+     auto grouped = groups > 1;
+     auto weights_desc_usr = tensor::desc(weights_dims, dtype);
+@@ -116,12 +160,12 @@ struct convolution_forward : public dnnl::convolution_forward {
+         src_desc, weights_desc, tensor::desc(), dst_desc, strides, dilates_,
+         padding_l, padding_r, attr_t(), aalgorithm, apkind);
+ 
+-    if (!grouped) {
++    // if (!grouped) {
+       return pd.weights_desc();
+-    } else {
+-      // hide group info from the outside world
+-      return tensor::desc(pd.weights_desc()).to_ungrouped();
+-    }
++    // } else {
++    //   // hide group info from the outside world
++    //   return tensor::desc(pd.weights_desc()).to_ungrouped();
++    // }
+   }
+ 
+   template <bool with_bias>
+@@ -168,32 +212,134 @@ private:
+                            const dims& padding_l,
+                            const dims& padding_r,
+                            int groups,
++                           const scale_t& src_scales,
++                           const scale_t& weights_scales,
++                           const scale_t& dst_scales,
+                            const attr_t& attr,
+                            algorithm aalgorithm,
+                            prop_kind aprop_kind,
++                           const lowp_kind alowp_kind,
+                            const engine& aengine) {
++    scale_t dst_scales_in;
++    auto dst_data_type = data_type::f32;
++    tensor::desc src_desc, weights_desc, bias_desc;
++    attr_t op_attr, src_attr, weights_attr, bias_attr;
+ 
+     // make weights and dilates compatible with DNNL
+     auto weights_ = weights.make_grouped_weights(groups);
+     auto dilates_ = utils::get_compatible_dilates(dilates);
+ 
++    auto weights_scales_in = weights_.has_scale() ? weights_.get_scale() : weights_scales;
++    if (!weights_scales_in.empty()) {
++      IDEEP_ENFORCE(alowp_kind == LOWP_U8S8 || alowp_kind == LOWP_S8S8, "Unsupported lowp kind");
++      int scale_size = (weights_scales_in.size() > 1) ? dst_dims[1] : 1;
++      auto src_scales_in = src.has_scale() ? src.get_scale()
++        : (src_scales.empty() ? IDEEP_DEF_SCALE : src_scales);
++
++      // determine dst data type
++      if (attr.has_op_kind(kind::sum)) {
++        dst_data_type = dst.get_data_type();
++      } else if (dst_scales.empty() || dst_scales == IDEEP_DEF_SCALE) {
++        dst_data_type = data_type::f32;
++      } else if (attr.non_negitive_output()){
++        dst_data_type = data_type::u8;
++      } else {
++        dst_data_type = data_type::s8;
++      }
++
++      // fill primitive attr
++      scale_t op_scales(scale_size), bias_scales(scale_size);
++      dst_scales_in = (dst_scales.empty() || dst_data_type == data_type::f32)
++        ? IDEEP_DEF_SCALE : dst_scales;
++      for (int i = 0; i < scale_size; i++) {
++        bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
++        op_scales[i] = dst_scales_in[0] / bias_scales[i];
++        // op_scales[i] = 1.0f;
++      }
++
++      // if (attr.has_op_kind(kind::sum)) {
++      //   float sum_scale = dst_scales_in[0] / (dst.has_scale() ? dst.get_scale()[0] : 1.0f);
++      //   if (attr.has_op_kind(kind::eltwise)) {
++      //     op_attr = attr_t::residual(sum_scale);
++      //   } else {
++      //     op_attr = attr_t::fuse_sum(sum_scale);
++      //   }
++      // } else if (attr.has_op_kind(kind::eltwise)) {
++      //   op_attr = attr_t::fuse_relu();
++      // }
++      op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
++      // op_attr.set_int_output_round_mode(round_mode::round_nearest);
++      if (attr.has_op_kind(kind::sum)) {
++        float sum_scale = dst_scales_in[0] / (dst.has_scale() ? dst.get_scale()[0] : 1.0f);
++        if (attr.has_op_kind(kind::eltwise)) {
++          op_attr.set_post_ops(post_ops::residual(sum_scale));
++        } else {
++          op_attr.set_post_ops(post_ops::sum(sum_scale));
++        }
++      } else if (attr.has_op_kind(kind::eltwise)) {
++        op_attr.set_post_ops(post_ops::relu());
++      }
++
++      src_desc = {src.get_dims(), alowp_kind == LOWP_U8S8 ? data_type::u8 : data_type::s8};
++      if (src.get_data_type() == data_type::f32) {
++        src_attr = {0 , src_scales_in};
++      }
++
++      weights_desc = {weights_.get_dims(), data_type::s8};
++      if (weights_.get_data_type() == data_type::f32) {
++        weights_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, (groups > 1)), weights_scales_in};
++      }
++
++      if (with_bias) {
++        bias_desc = {bias.get_dims(), data_type::s32};
++        if (bias.get_data_type() == data_type::f32) {
++          bias_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, false), bias_scales};
++        }
++      }
++    } else {
++      op_attr = attr;
++
++      src_desc = {src.get_dims(), data_type::f32};
++      if (src.has_scale()) {
++        auto src_scale = src.get_scale();
++        src_scale[0] = 1.0f / src_scale[0];
++        src_attr = {0, src_scale};
++      }
++
++      weights_desc = weights_.get_desc();
++      IDEEP_ENFORCE(weights_.get_data_type() == data_type::f32, "Incorrect data type in weights");
++
++      if (with_bias) {
++        IDEEP_ENFORCE(bias.get_data_type() == data_type::f32, "Incorrect data type in bias");
++        bias_desc = bias.get_desc();
++      }
++    }
++
+     // TODO: XPZ: is it ok to use src type as dst type?
+-    tensor::desc dst_desc(dst_dims, src.get_data_type());
++    tensor::desc dst_desc;
++    if (attr.has_op_kind(kind::sum))
++      dst_desc = dst.get_desc();
++    else
++      dst_desc = {dst_dims, dst_data_type};
+ 
+     auto pd = get_primitive_desc<with_bias>(
+-        src.get_desc(), weights_.get_desc(), bias.get_desc(), dst_desc,
+-        strides, dilates_, padding_l, padding_r, attr, aalgorithm,
++        src_desc, weights_desc, bias_desc, dst_desc,
++        strides, dilates_, padding_l, padding_r, op_attr, aalgorithm,
+         aprop_kind, aengine);
+ 
+-    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+-    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
++    auto expected_src = src.reorder_if_differ_in(pd.src_desc(), src_attr);
++    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc(), weights_attr);
+     dst.reinit_if_necessary(pd.dst_desc());
++    if (!dst_scales.empty() && dst_data_type != data_type::f32) {
++      dst.set_scale(dst_scales_in);
++    }
+ 
+     if (with_bias) {
++      auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc(), bias_attr);
+       super(pd).execute(stream::default_stream(), 
+                         {{DNNL_ARG_SRC, expected_src},
+                          {DNNL_ARG_WEIGHTS, expected_weights},
+-                         {DNNL_ARG_BIAS, bias},
++                         {DNNL_ARG_BIAS, expected_bias},
+                          {DNNL_ARG_DST, dst}});
+     } else {
+       super(pd).execute(stream::default_stream(), 
+@@ -201,6 +347,11 @@ private:
+                          {DNNL_ARG_WEIGHTS, expected_weights},
+                          {DNNL_ARG_DST, dst}});
+     }
++
++    if (attr.non_negitive_output() && dst.get_data_type() == data_type::s8) {
++      tensor::desc dst_u8_desc = dst.get_desc().to_type(data_type::u8);
++      dst.set_desc(dst_u8_desc);
++    }
+   }
+ };
+ 
+diff --git a/include/ideep/operators/inner_product.hpp b/include/ideep/operators/inner_product.hpp
+index c015b12..273c080 100644
+--- a/include/ideep/operators/inner_product.hpp
++++ b/include/ideep/operators/inner_product.hpp
+@@ -7,64 +7,198 @@ struct inner_product_forward : public dnnl::inner_product_forward {
+ 
+   using super = dnnl::inner_product_forward;
+   template <bool with_bias = true>
+-  static void compute(const tensor& src,
+-                      const tensor& weights,
+-                      const tensor& bias,
+-                      tensor& dst,
+-                      prop_kind aprop_kind = prop_kind::forward,
+-                      const engine& aengine = engine::cpu_engine()) {
+-  compute_impl<with_bias>(src, weights, bias, dst, aprop_kind, aengine);
++  static void compute(
++      const tensor& src,
++      const tensor& weights,
++      const tensor& bias,
++      tensor& dst,
++      const scale_t& src_scales = scale_t(),
++      const scale_t& weights_scales = scale_t(),
++      const scale_t& dst_scales = scale_t(),
++      const attr_t& attr = attr_t(),
++      const prop_kind aprop_kind = prop_kind::forward,
++      const lowp_kind alowp_kind = LOWP_U8S8,
++      const engine& aengine = engine::cpu_engine()) {
++    compute_impl<with_bias>(
++        src,
++        weights,
++        bias,
++        dst,
++        src_scales,
++        weights_scales,
++        dst_scales,
++        attr,
++        aprop_kind,
++        alowp_kind,
++        aengine);
+   }
+ 
+-  static void compute(const tensor& src,
+-                      const tensor& weights,
+-                      tensor& dst,
+-                      prop_kind aprop_kind = prop_kind::forward,
+-                      const engine& aengine = engine::cpu_engine()) {
++  static void compute(
++      const tensor& src,
++      const tensor& weights,
++      tensor& dst,
++      const scale_t& src_scales = scale_t(),
++      const scale_t& weights_scales = scale_t(),
++      const scale_t& dst_scales = scale_t(),
++      const attr_t& attr = attr_t(),
++      const prop_kind aprop_kind = prop_kind::forward,
++      const lowp_kind alowp_kind = LOWP_U8S8,
++      const engine& aengine = engine::cpu_engine()) {
+     static tensor dummy_bias;
+-    compute<false>(src, weights, dummy_bias, dst, aprop_kind, aengine);
++    compute<false>(
++        src,
++        weights,
++        dummy_bias,
++        dst,
++        src_scales,
++        weights_scales,
++        dst_scales,
++        attr,
++        aprop_kind,
++        alowp_kind,
++        aengine);
+   }
+ 
++  static memory::desc expected_weights_descriptor(
++      const dims& weights_dims,
++      tensor::data_type dtype = tensor::data_type::f32,
++      tensor::data_type x_dtype = tensor::data_type::f32,
++      prop_kind aprop_kind = prop_kind::forward,
++      const engine& aengine = engine::cpu_engine()) {
++    auto x_dims = weights_dims;
++    x_dims[0] = 1;
++    auto y_dims = {x_dims[0], weights_dims[0]};
++    auto ndims = weights_dims.size();
++    auto y_dtype =
++        (dtype != tensor::data_type::s8) ? dtype : tensor::data_type::s32;
+ 
+-  static memory::desc expected_weights_desc(const dims& weights_dims,
+-                                            data_type dtype = data_type::f32,
+-                                            data_type x_dtype = data_type::f32) {
+-    // auto x_dims = weights_dims;
+-    // x_dims[0] = 1;
+-    // auto y_dims = {x_dims[0], weights_dims[0]};
+-    // auto ndims = weights_dims.size();
+-    // auto y_dtype = (dtype != tdtype_t::s8) ? dtype : tdtype_t::s32;
+-
+-    // IDEEP_ENFORCE(x_dims.size() == weights_dims.size(), "Invalid dims for data and weights");
+-    // tdesc_t x_desc(x_dims, x_dtype, ndims == 2 ? format::nc : format::nchw);
+-    // tdesc_t y_desc(y_dims, y_dtype, format::nc);
+-    // tdesc_t weights_desc(weights_dims, dtype, ndims == 2 ? format::oi : format::oihw);
++    IDEEP_ENFORCE(
++        x_dims.size() == weights_dims.size(),
++        "Invalid dims for data and weights");
++    tensor::desc x_desc(
++        x_dims, x_dtype, ndims == 2 ? format_tag::nc : format_tag::nchw);
++    tensor::desc y_desc(y_dims, y_dtype, format_tag::nc);
++    tensor::desc weights_desc(
++        weights_dims, dtype, ndims == 2 ? format_tag::oi : format_tag::oihw);
+ 
+-    // inner_product_forward comp(x_desc, weights_desc, tdesc_t(), y_desc);
+-    // return comp.dup_descriptor_of(query::weights_pd);
+-    return tensor::desc();
++    auto pd =
++        primitive_desc({aprop_kind, x_desc, weights_desc, y_desc}, aengine);
++    return pd.weights_desc();
+   }
+ 
+ private:
+   template <bool with_bias = true>
+-  static void compute_impl(const tensor& src,
+-                           const tensor& weights,
+-                           const tensor& bias,
+-                           tensor& dst,
+-                           prop_kind aprop_kind = prop_kind::forward,
+-                           const engine& aengine = engine::cpu_engine()) {
+-    auto src_desc = src.get_desc().to_format_any();
+-    auto weights_desc = weights.get_desc().to_format_any();
+-    auto bias_desc = with_bias ? bias.get_desc().to_format_any() : tensor::desc();
+-    auto dst_desc = dst.get_desc().to_format_any();
+-    auto pd = with_bias ? primitive_desc(
+-        {aprop_kind, src_desc, weights_desc, bias_desc, dst_desc}, aengine)
+-        : primitive_desc({aprop_kind, src_desc, weights_desc, dst_desc}, aengine);
+-    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+-    auto expected_weights = weights.reorder_if_differ_in(pd.weights_desc());
++ static void compute_impl(
++     const tensor& src,
++     const tensor& weights,
++     const tensor& bias,
++     tensor& dst,
++     const scale_t& src_scales = scale_t(),
++     const scale_t& weights_scales = scale_t(),
++     const scale_t& dst_scales = scale_t(),
++     const attr_t& attr = attr_t(),
++     const prop_kind aprop_kind = prop_kind::forward,
++     const lowp_kind alowp_kind = LOWP_U8S8,
++     const engine& aengine = engine::cpu_engine()) {
++   IDEEP_ENFORCE(src.ndims() == weights.ndims(), "Invalid dims in src or weights");
++
++   tensor::desc src_desc, weights_desc, bias_desc;
++   attr_t op_attr, src_attr, weights_attr, bias_attr;
++   scale_t dst_scales_in;
++   auto dst_data_type = data_type::f32;
++   tensor::dims dst_dims;
++
++   auto weights_scales_in =
++       weights.has_scale() ? weights.get_scale() : weights_scales;
++
++   if (!weights_scales_in.empty()) {
++     IDEEP_ENFORCE(
++         alowp_kind == LOWP_U8S8 || alowp_kind == LOWP_S8S8,
++         "Unsupported lowp kind");
++
++     auto src_scales_in = src.has_scale()
++         ? src.get_scale()
++         : (src_scales.empty() ? IDEEP_DEF_SCALE : src_scales);
++
++     src_desc = {src.get_dims(),
++                 alowp_kind == LOWP_U8S8 ? data_type::u8 : data_type::s8,
++                 format_tag::any};
++     if (src.get_data_type() == data_type::f32) {
++       src_attr = {0, src_scales_in};
++     }
++
++     dst_dims = {src_desc.get_dim(0), weights.get_dim(0)};
++     int scale_size = (weights_scales_in.size() > 1) ? dst_dims[1] : 1;
++
++     weights_desc = {weights.get_dims(), data_type::s8, format_tag::any};
++     if (weights.get_data_type() == data_type::f32) {
++       weights_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, false), weights_scales_in};
++     }
++
++     // determine dst data type
++     if (dst_scales.empty() || dst_scales == IDEEP_DEF_SCALE) {
++       dst_data_type = data_type::f32;
++     } else if (attr.non_negitive_output()){
++       dst_data_type = data_type::u8;
++     } else {
++       dst_data_type = data_type::s8;
++     }
++
++     // fill primitive attr
++     scale_t op_scales(scale_size), bias_scales(scale_size);
++     dst_scales_in = (dst_scales.empty() || dst_data_type == data_type::f32) ? IDEEP_DEF_SCALE : dst_scales;
++     for (int i = 0; i < scale_size; i++) {
++       bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
++       op_scales[i] = dst_scales_in[0] / bias_scales[i];
++     }
++     op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
++    //  op_attr.set_int_output_round_mode(round_mode::round_nearest);
++
++     if (with_bias) {
++       bias_desc = {bias.get_dims(), data_type::s32, format_tag::any};
++       if (bias.get_data_type() == data_type::f32) {
++         bias_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, false), bias_scales};
++       }
++     }
++   } else {
++     op_attr = attr;
++     src_desc = {src.get_dims(), data_type::f32, format_tag::any};
++     if (src.has_scale()) {
++       auto src_scale = src.get_scale();
++       src_scale[0] = 1.0f / src_scale[0];
++       src_attr = {0, src_scale};
++     }
++     dst_dims = {src_desc.get_dim(0), weights.get_dim(0)};
++     weights_desc = weights.get_desc().to_format_any();
++     IDEEP_ENFORCE(weights.get_data_type() == data_type::f32, "Incorrect data type in weights");
++     if (with_bias) {
++       IDEEP_ENFORCE(bias.get_data_type() == data_type::f32, "Incorrect data type in bias");
++       bias_desc = bias.get_desc().to_format_any();
++     }
++   }
++  //  auto src_desc_in = src_desc.to_format_any();
++  //  tensor::desc weights_desc_in;
++  //   if (weights_desc.get_data_type() == data_type::s8 ||
++  //       weights_desc.get_data_type() == data_type::u8)
++  //     weights_desc_in = weights_desc.to_format_any();
++  //   else
++  //     weights_desc_in = weights_desc;
++  //  auto bias_desc_in =
++  //      with_bias ? bias_desc.to_format_any() : tensor::desc();
++   tensor::desc dst_desc(dst_dims, dst_data_type, format_tag::any);
++   auto pd = with_bias
++       ? primitive_desc(
++             {aprop_kind, src_desc, weights_desc, bias_desc, dst_desc}, op_attr, aengine)
++       : primitive_desc(
++             {aprop_kind, src_desc, weights_desc, dst_desc}, op_attr, aengine);
++    auto expected_src = src.reorder_if_differ_in(pd.src_desc(), src_attr);
++    auto expected_weights = weights.reorder_if_differ_in(pd.weights_desc(), weights_attr);
+     dst.reinit_if_necessary(pd.dst_desc());
++   if (!dst_scales.empty() && dst_data_type != data_type::f32) {
++     dst.set_scale(dst_scales_in);
++   }
+     if (with_bias){
+-      auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc());
++      auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc(), bias_attr);
+       super(pd).execute(stream::default_stream(),
+                         {{DNNL_ARG_SRC, expected_src},
+                          {DNNL_ARG_WEIGHTS, expected_weights},
+@@ -76,6 +210,11 @@ private:
+                          {DNNL_ARG_WEIGHTS, expected_weights},
+                          {DNNL_ARG_DST, dst}});
+     }
++
++    if (attr.non_negitive_output() && dst.get_data_type() == data_type::s8) {
++     tensor::desc dst_u8_desc = dst.get_desc().to_type(data_type::u8);
++     dst.set_desc(dst_u8_desc);
++   }
+   }
+ };
+ 
+diff --git a/include/ideep/operators/pool.hpp b/include/ideep/operators/pool.hpp
+index 395aac9..87454f9 100644
+--- a/include/ideep/operators/pool.hpp
++++ b/include/ideep/operators/pool.hpp
+@@ -21,19 +21,31 @@ struct pooling_forward : public dnnl::pooling_forward {
+     // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
+     auto src_desc = src._get_unblocked_desc_if_4c_blocked();
+     // auto src_desc = src.get_desc();
+-    auto dst_desc = tensor::desc(output_sizes, data_type::f32).to_format_any();
++    auto dst_desc = tensor::desc(output_sizes, src.get_data_type()).to_format_any();
+ 
+     auto pd = primitive_desc(
+         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,
+          padding_r}, aengine);
+ 
+-    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+-    dst.reinit_if_necessary(pd.dst_desc());
+-    exec_args args = {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
++    // auto expected_src = src.reorder_if_differ_in(pd.src_desc());
++    if (dst != src) {
++      dst.reinit_if_necessary(pd.dst_desc());
++      // exec_args args = {{DNNL_ARG_SRC, src}, {DNNL_ARG_DST, dst}};
++      if (src.has_scale()) {
++        dst.set_scale(src.get_scale());
++      }
++      // args.insert({DNNL_ARG_DST, dst});
++      if (with_workspace) {
++        dst.init_workspace(pd.workspace_desc());
++        // args.insert({DNNL_ARG_WORKSPACE, dst.get_workspace()});
++      }
++    }
++
++    exec_args args = {{DNNL_ARG_SRC, src}, {DNNL_ARG_DST, dst}};
+     if (with_workspace) {
+-      dst.init_workspace(pd.workspace_desc());
+       args.insert({DNNL_ARG_WORKSPACE, dst.get_workspace()});
+     }
++
+     super(pd).execute(stream::default_stream(), args);
+   }
+ };
+diff --git a/include/ideep/tensor.hpp b/include/ideep/tensor.hpp
+index a39670a..b74fe68 100644
+--- a/include/ideep/tensor.hpp
++++ b/include/ideep/tensor.hpp
+@@ -9,8 +9,8 @@ namespace ideep {
+ 
+ class tensor : public memory {
+  public:
+-  using dims = memory::dims;
+-  using dim_t = dims::value_type;
++  // using dims = memory::dims;
++  using dim_t = dnnl_dim_t;
+   using dims_t = dnnl_dims_t;
+   using format_kind_t = dnnl_format_kind_t;
+   using blocking_desc_t = dnnl_blocking_desc_t;
+@@ -237,17 +237,71 @@ class tensor : public memory {
+     }
+ 
+     desc to_grouped(int groups) const {
+-      auto dims = get_dims();
+-      dims.insert(dims.begin(), groups);
+-      dims[1] /= groups;
+-      return desc(dims, get_data_type()); // default goihw for 5d, goidhw for 6d
++      auto ret = clone();
++
++      auto& dims = ret.data.dims;
++      auto& paddim = ret.data.padded_dims;
++      auto& blk = ret.data.format_desc.blocking;
++      auto& strides = blk.strides;
++
++      auto second_dim_blocks = 1;
++
++      for (size_t i = 0; i < blk.inner_nblks; i++) {
++        // assume most significant dim g is not blocked
++        blk.inner_idxs[i] += 1;
++        if (blk.inner_idxs[i] == 1)
++          second_dim_blocks *= blk.inner_blks[i];
++      }
++
++      for (size_t i = ret.data.ndims; i >= 2; i--) {
++        dims[i] = dims[i - 1];
++        paddim[i] = paddim[i - 1];
++        strides[i] = strides[i - 1];
++      }
++
++      ret.data.ndims += 1;
++
++      dims[1] = dims[0] / groups;
++      paddim[1] = paddim[0] / groups;
++      strides[1] = strides[0];
++
++      dims[0] = groups;
++      paddim[0] = groups;
++      strides[0] = strides[1] * paddim[1] / second_dim_blocks;
++
++      return ret;
+     }
+ 
+     desc to_ungrouped() const {
+-      auto dims = get_dims();
+-      dims[1] *= dims[0]; // g == dims[0]
+-      dims.erase(dims.begin());
+-      return desc(dims, get_data_type()); // default oihw for 4d, oidhe for 5d
++      IDEEP_ENFORCE(ndims() >= 2, "Cannot ungroup a descriptor with ndims < 2");
++
++      auto ret = clone();
++
++      auto &dims = ret.data.dims;
++      auto &paddim = ret.data.padded_dims;
++      auto &blk = ret.data.format_desc.blocking;
++      auto &strides = blk.strides;
++
++      // merge top two dims
++      dims[0] *= dims[1];
++      paddim[0] *= paddim[1];
++      strides[0] = strides[1];
++
++      // move each dim to the left 
++      for (size_t i = 2; i < ret.data.ndims; i++) {
++        dims[i - 1] = dims[i];
++        paddim[i - 1] = paddim[i];
++        strides[i - 1] = strides[i];
++      }
++
++      ret.data.ndims -= 1;
++
++      for (size_t i = 0; i < blk.inner_nblks; i++) {
++        // assume most significant dim g is not blocked
++        blk.inner_idxs[i] -= 1;
++      }
++
++      return ret;
+     }
+ 
+     desc permute(const std::vector<int> &permute_axes = {}) const {
+@@ -353,7 +407,6 @@ class tensor : public memory {
+     }
+ 
+    private:
+-
+     const dims_t &padded_dims() const { return data.padded_dims; }
+ 
+     const dims_t &padded_offsets() const { return data.padded_offsets; }
+@@ -513,6 +566,7 @@ class tensor : public memory {
+     scale_ = t.scale_;
+     workspace_ = t.workspace_;
+     eng_ = t.eng_;
++    groups_ = t.groups_;
+   }
+ 
+   /// Move constructor
+@@ -521,6 +575,7 @@ class tensor : public memory {
+     scale_ = std::move(t.scale_);
+     workspace_ = std::move(t.workspace_);
+     eng_ = std::move(t.eng_);
++    groups_ = t.groups_;
+   }
+ 
+   /// Assignment operator
+@@ -530,6 +585,7 @@ class tensor : public memory {
+     scale_ = t.scale_;
+     workspace_ = t.workspace_;
+     eng_ = t.eng_;
++    groups_ = t.groups_;
+     return *this;
+   }
+ 
+@@ -540,6 +596,7 @@ class tensor : public memory {
+     scale_ = std::move(t.scale_);
+     workspace_ = std::move(t.workspace_);
+     eng_ = std::move(t.eng_);
++    groups_ = t.groups_;
+     return *this;
+   }
+ 
+@@ -603,12 +660,14 @@ class tensor : public memory {
+     std::cout << std::endl;
+   }
+ 
+-  tensor reorder_if_differ_in(const memory::desc &expected_desc) const {
++  tensor reorder_if_differ_in(const memory::desc &expected_desc, const attr_t &aattr = attr_t()) const {
+     if (expected_desc == get_desc()) {
+       return *this;
+     } else {
+       tensor dst{expected_desc};
+-      this->reorder_to(dst);
++      this->reorder_to(dst, aattr);
++      // if (has_scale())
++      // dst.set_scale(get_scale());
+       return dst;
+     }
+   }
+@@ -624,7 +683,19 @@ class tensor : public memory {
+ 
+   // no data copy
+   tensor make_grouped_weights(int groups) const {
+-    if (groups <= 1) {
++    // if (groups <= 1) {
++    //   return *this;
++    // } else {
++    //   auto old_desc = get_desc();
++    //   auto grouped_desc =
++    //       old_desc.is_iohw() || old_desc.is_iodhw()
++    //           ? old_desc.transpose(0, 1).to_grouped(groups).transpose(1, 2)
++    //           : old_desc.to_grouped(groups);
++    //   auto this_copy = *this;
++    //   this_copy.set_desc(grouped_desc);
++    //   return this_copy;
++    // }
++    if (get_groups() == groups) {
+       return *this;
+     } else {
+       auto old_desc = get_desc();
+@@ -634,6 +705,7 @@ class tensor : public memory {
+               : old_desc.to_grouped(groups);
+       auto this_copy = *this;
+       this_copy.set_desc(grouped_desc);
++      this_copy.set_groups(groups);
+       return this_copy;
+     }
+   }
+@@ -661,9 +733,10 @@ class tensor : public memory {
+     return *this;
+   }
+ 
+-  inline void reorder_from(const tensor &src) {
++  inline void reorder_from(const tensor &src, const attr_t &aattr = attr_t()) {
+     // https://github.com/intel/mkl-dnn/issues/571
+-    dnnl::reorder(src, *this)
++    auto pd = dnnl::reorder::primitive_desc(src, *this, aattr);
++    dnnl::reorder(pd)
+         .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
+   }
+ 
+@@ -678,12 +751,47 @@ class tensor : public memory {
+   inline tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
+     auto dst = buffer ? tensor(get_dims(), get_data_type(), buffer)
+                       : tensor(get_dims(), get_data_type());
+-    this->reorder_to(dst);
++    if (scale_out && has_scale()) {
++      auto& src_scale = get_scale();
++      scale_t scales(src_scale.size());
++      for (int i = 0 ; i < src_scale.size(); i++) {
++        scales[i] = 1.0f / src_scale[i];
++      }
++      int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), (get_groups() > 1));
++      this->reorder_to(dst, {mask, scales});
++    } else {
++      this->reorder_to(dst);
++      if (has_scale()) {
++        dst.set_scale(get_scale());
++      }
++    }
+     return dst;
+   }
+ 
+   /// Fill the tensor with a src tensor
+-  void feed_from(const tensor &src) { this->reorder_from(src); }
++  void feed_from(const tensor &src) {
++    scale_t dst_scale, src_scale;
++    if (has_scale() && src.has_scale()) {
++      dst_scale = get_scale();
++      src_scale = src.get_scale();
++    } else if (has_scale()) {
++      dst_scale = get_scale();
++      src_scale.assign(dst_scale.size(), 1.0f);
++    } else if (src.has_scale()) {
++      src_scale = src.get_scale();
++      dst_scale.assign(src_scale.size(), 1.0f);
++    } else {
++      dst_scale = IDEEP_DEF_SCALE;
++      src_scale = IDEEP_DEF_SCALE;
++    }
++    IDEEP_ENFORCE(dst_scale.size() == src_scale.size(), "Invalid tensor scales");
++    scale_t scales(dst_scale.size());
++    for (int i = 0; i < dst_scale.size(); i++) {
++      scales[i] = dst_scale[i] / src_scale[i];
++    }
++    int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), false);
++    this->reorder_from(src, {mask, scales});
++  }
+ 
+   // For backward compatibility. Will be deprecated.
+   void feed_from(const dims &adims, data_type adata_type, const void *array) {
+@@ -717,11 +825,38 @@ class tensor : public memory {
+ 
+   /// Reordering weights
+   void feed_from_weights(const tensor &src, int groups = 1) {
+-    auto mask_dst = this->make_grouped_weights(groups);
++    scale_t dst_scale, src_scale;
++    if (has_scale() && src.has_scale()) {
++      dst_scale = get_scale();
++      src_scale = src.get_scale();
++    } else if (has_scale()) {
++      dst_scale = get_scale();
++      src_scale.assign(dst_scale.size(), 1.0f);
++    } else if (src.has_scale()) {
++      src_scale = src.get_scale();
++      dst_scale.assign(src_scale.size(), 1.0f);
++    } else {
++      dst_scale = IDEEP_DEF_SCALE;
++      src_scale = IDEEP_DEF_SCALE;
++    }
++    IDEEP_ENFORCE(dst_scale.size() == src_scale.size(), "Invalid tensor scales");
++    scale_t scales(dst_scale.size());
++    for (int i = 0; i < dst_scale.size(); i++) {
++      scales[i] = dst_scale[i] / src_scale[i];
++    }
++    int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), (groups > 1));
++    // this->reorder_from(src, {mask, scales});
++    // auto mask_dst = this->make_grouped_weights(groups);
+     auto mask_src = src.make_grouped_weights(groups);
+-    dnnl::reorder(mask_src, mask_dst).execute(stream::default_stream(),
+-                                              const_cast<tensor &>(mask_src),
+-                                              mask_dst);
++    attr_t attr {mask, scales};
++    // auto pd = dnnl::reorder::primitive_desc(mask_src, mask_dst, attr);
++    auto pd = dnnl::reorder::primitive_desc(mask_src, *this, attr);
++    dnnl::reorder(pd)
++        .execute(stream::default_stream(), mask_src, const_cast<tensor &>(*this));
++    this->set_groups(groups);
++    // dnnl::reorder(mask_src, mask_dst).execute(stream::default_stream(),
++    //                                           const_cast<tensor &>(mask_src),
++    //                                           mask_dst);
+   }
+ 
+   // data copy
+@@ -780,16 +915,6 @@ class tensor : public memory {
+     *this = std::move(src.permute(perms));
+   }
+ 
+- private:
+-  bool has_same_volume(const dims &new_dims) const {
+-    auto old_dims = get_dims();
+-    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
+-                                      std::multiplies<dim_t>());
+-    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
+-                                      std::multiplies<dim_t>());
+-    return volume_old == volume_new;
+-  }
+-
+   /// Set a descriptor into tensor to replace the older one, keep buffer
+   /// It is caller's responsibility to make sure the original buffer is large
+   /// enough for specified descriptor
+@@ -804,10 +929,43 @@ class tensor : public memory {
+     scale_ = std::move(scale);
+   }
+ 
++  const int get_groups() const {
++    return groups_;
++  }
++
++  void set_groups(int groups) {
++    groups_ = groups;
++  }
++
++ private:
++  bool has_same_volume(const dims &new_dims) const {
++    auto old_dims = get_dims();
++    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
++                                      std::multiplies<dim_t>());
++    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
++                                      std::multiplies<dim_t>());
++    return volume_old == volume_new;
++  }
++
++  // /// Set a descriptor into tensor to replace the older one, keep buffer
++  // /// It is caller's responsibility to make sure the original buffer is large
++  // /// enough for specified descriptor
++  // void set_desc(const desc &new_desc) {
++  //   // Keep the original management
++  //   auto buf = std::move(buffer_);
++  //   auto ws = std::move(workspace_);
++  //   auto scale = std::move(scale_);
++  //   reinit(new_desc, get_data_handle(), get_engine());
++  //   buffer_ = std::move(buf);
++  //   workspace_ = std::move(ws);
++  //   scale_ = std::move(scale);
++  // }
++
+   std::shared_ptr<tensor> workspace_;
+   std::shared_ptr<scale_t> scale_;
+   std::shared_ptr<void> buffer_;
+   engine eng_;
++  int groups_ = 1;
+ };
+ 
+ }  // namespace ideep
