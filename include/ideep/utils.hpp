@@ -77,6 +77,13 @@ inline memory::dims get_compatible_dilates(const memory::dims& dilates) {
   return {0, 0};
 }
 
+inline memory::dims group_dims(const dims &adims, dim groups) {
+  auto new_dims = adims;
+  new_dims.insert(new_dims.begin(), groups);
+  new_dims[1] /= groups;
+  return new_dims;
+}
+
 inline dnnl::algorithm rnn_kind_to_algorithm(rnn_kind rnn) {
   if (rnn == RNN_RELU || rnn == RNN_TANH) {
     return dnnl::algorithm::vanilla_rnn;

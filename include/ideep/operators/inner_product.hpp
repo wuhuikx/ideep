@@ -28,7 +28,7 @@ struct inner_product_forward : public dnnl::inner_product_forward {
   }
 
 
-  static memory::desc expected_weights_desc(
+  static tensor::desc expected_weights_desc(
       const dims& weights_dims,
       data_type dtype = data_type::f32,
       data_type x_dtype = data_type::f32,

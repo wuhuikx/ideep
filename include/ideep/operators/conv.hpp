@@ -48,7 +48,7 @@ struct convolution_forward : public dnnl::convolution_forward {
   }
 
   // TODO: XPZ: refactor it
-  static memory::desc expected_weights_desc(
+  static tensor::desc expected_weights_desc(
       const dims& weights_dims,
       data_type dtype = data_type::f32,
       const dims& strides = {1, 1},
@@ -64,20 +64,19 @@ struct convolution_forward : public dnnl::convolution_forward {
       const engine& aengine = engine::cpu_engine()) {
 
     auto grouped = groups > 1;
-    auto weights_desc_usr = tensor::desc(weights_dims, dtype);
-    auto weights_desc =
-        grouped ? weights_desc_usr.to_grouped(groups) : weights_desc_usr;
+    auto weights_dims_g =
+        grouped ? utils::group_dims(weights_dims, groups) : weights_dims;
+    auto weights_desc = tensor::desc(weights_dims_g, dtype);
 
     auto dims_in = weights_desc.get_dims();
     auto ndims = dims_in.size();
-    auto g = grouped ? dims_in[0] : 1;
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
     IDEEP_ENFORCE(
         !(aalgorithm == algorithm::convolution_winograd && src_dims.empty()),
         "Incorrect src_dims");
-    auto ic = g * dims_in[1 + grouped];
-    auto oc = g * dims_in[0 + grouped];
+    auto ic = groups * dims_in[1 + grouped];
+    auto oc = groups * dims_in[0 + grouped];
     auto kh = dims_in[ndims - 2];
     auto kw = dims_in[ndims - 1];
     int mb, h, w;
@@ -117,12 +116,8 @@ struct convolution_forward : public dnnl::convolution_forward {
         src_desc, weights_desc, tensor::desc(), dst_desc, strides, dilates_,
         padding_l, padding_r, attr_t(), aalgorithm, apkind);
 
-    if (!grouped) {
-      return pd.weights_desc();
-    } else {
-      // hide group info from the outside world
-      return tensor::desc(pd.weights_desc()).to_ungrouped();
-    }
+    // embed group info into weights_desc
+    return tensor::desc(pd.weights_desc(), groups);
   }
 
   template <bool with_bias>
