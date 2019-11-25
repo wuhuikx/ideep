@@ -15,9 +15,16 @@ struct sum : public dnnl::sum {
       // "upcast" vector<tensor::desc> to vector<memory::desc>
       return static_cast<memory::desc>(t.get_desc());
     });
-    auto pd = primitive_desc(scales, input_descs, aengine);
+    bool inplace = (output == inputs[0]);
+    dnnl::sum::primitive_desc pd;
+    if (inplace) {
+      pd = primitive_desc(output.get_desc(), scales, input_descs, aengine);
+    } else {
+      pd = primitive_desc(scales, input_descs, aengine);
+    }
 
-    output.reinit_if_necessary(pd.dst_desc());
+    if (!inplace)
+      output.reinit_if_necessary(pd.dst_desc());
 
     exec_args args {{DNNL_ARG_DST, output}};
     for (int i = 0; i < inputs.size(); ++i) {

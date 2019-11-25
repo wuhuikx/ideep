@@ -71,7 +71,8 @@ struct attr_t : public dnnl::primitive_attr {
     algorithm alg;
     float scale = 1.0, alpha = 1.0, beta = 0.0;
 
-    auto akind = kind(index);
+    auto akind = static_cast<dnnl::primitive::kind>(
+        dnnl_post_ops_get_kind(po.get(), index));
     switch (akind) {
       case kind::sum:
         po.get_params_sum(index, scale);

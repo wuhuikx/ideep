@@ -616,12 +616,12 @@ class tensor : public memory {
     std::cout << std::endl;
   }
 
-  tensor reorder_if_differ_in(const desc &expected_desc) const {
+  tensor reorder_if_differ_in(const memory::desc &expected_desc, const attr_t &aattr = attr_t()) const {
     if (expected_desc == get_desc()) {
       return *this;
     } else {
       tensor dst{expected_desc};
-      this->reorder_to(dst);
+      this->reorder_to(dst, aattr);
       return dst;
     }
   }
@@ -676,10 +676,10 @@ class tensor : public memory {
     return *this;
   }
 
-  // XPZ: TODO: make it private
-  inline void reorder_from(const tensor &src) {
+  inline void reorder_from(const tensor &src, const attr_t &aattr = attr_t()) {
     // https://github.com/intel/mkl-dnn/issues/571
-    dnnl::reorder(src, *this)
+    auto pd = dnnl::reorder::primitive_desc(src, *this, aattr);
+    dnnl::reorder(pd)
         .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
   }
 
@@ -705,6 +705,10 @@ class tensor : public memory {
     } else
       this->reorder_to(dst);
 
+    if (has_scale()) {
+      dst.set_scale(get_scale());
+    }
+
     return dst;
   }
 
@@ -719,14 +723,34 @@ class tensor : public memory {
   /// Fill the tensor with a src tensor
   /// XPZ: TODO: may replace is_deconv_weights with a enum for other purposes
   void feed_from(const tensor &src, bool is_deconv_weights = false) {
+  	scale_t dst_scale, src_scale;
+    if (has_scale() && src.has_scale()) {
+      dst_scale = get_scale();
+      src_scale = src.get_scale();
+    } else if (has_scale()) {
+      dst_scale = get_scale();
+      src_scale.assign(dst_scale.size(), 1.0f);
+    } else if (src.has_scale()) {
+      src_scale = src.get_scale();
+      dst_scale.assign(src_scale.size(), 1.0f);
+    } else {
+      dst_scale = IDEEP_DEF_SCALE;
+      src_scale = IDEEP_DEF_SCALE;
+    }
+    IDEEP_ENFORCE(dst_scale.size() == src_scale.size(), "Invalid tensor scales");
+    scale_t scales(dst_scale.size());
+    for (int i = 0; i < dst_scale.size(); i++) {
+      scales[i] = dst_scale[i] / src_scale[i];
+    }
+    int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), (src.get_desc().is_grouped()));
     auto groups = 1;
     if ((groups = get_desc().g()) > 1 ||
         (groups = src.get_desc().g()) > 1) {
       auto mask_dst = this->make_grouped_weights(groups, is_deconv_weights);
       auto mask_src = src.make_grouped_weights(groups, is_deconv_weights);
-      mask_src.reorder_to(mask_dst);
+      mask_src.reorder_to(mask_dst, {mask, scales});
     } else
-      src.reorder_to(*this);
+      src.reorder_to(*this, {mask, scales});
   }
 
   // For backward compatibility. Will be deprecated.
