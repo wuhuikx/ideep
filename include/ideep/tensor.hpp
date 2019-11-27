@@ -100,7 +100,13 @@ class tensor : public memory {
 
     inline dims get_strides() const {
       auto& strides = blocking_strides();
-      return dims(strides, strides + data.ndims);
+      if (is_grouped()) {
+        auto ret = dims(strides + 1, strides + data.ndims);
+        ret[0] = std::min(strides[0], strides[1]);
+        return ret;
+      } else {
+        return dims(strides, strides + data.ndims);
+      }
     }
 
     /** returns true if memory descriptor is zero */
@@ -676,11 +682,10 @@ class tensor : public memory {
     return *this;
   }
 
-  inline void reorder_from(const tensor &src, const attr_t &aattr = attr_t()) {
+  inline void reorder_from(const tensor &src) {
     // https://github.com/intel/mkl-dnn/issues/571
-    auto pd = dnnl::reorder::primitive_desc(src, *this, aattr);
-    dnnl::reorder(pd)
-        .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
+    dnnl::reorder(src, *this)
+        .execute(stream::default_stream(), const_cast<tensor&>(src), *this);
   }
 
   // XPZ: TODO: make it private
@@ -742,15 +747,18 @@ class tensor : public memory {
     for (int i = 0; i < dst_scale.size(); i++) {
       scales[i] = dst_scale[i] / src_scale[i];
     }
-    int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), (src.get_desc().is_grouped()));
+
     auto groups = 1;
     if ((groups = get_desc().g()) > 1 ||
         (groups = src.get_desc().g()) > 1) {
       auto mask_dst = this->make_grouped_weights(groups, is_deconv_weights);
       auto mask_src = src.make_grouped_weights(groups, is_deconv_weights);
+      int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), true);
       mask_src.reorder_to(mask_dst, {mask, scales});
-    } else
+    } else {
+      int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), false);
       src.reorder_to(*this, {mask, scales});
+    }
   }
 
   // For backward compatibility. Will be deprecated.

@@ -265,7 +265,7 @@ private:
         src_attr = {0 , src_scales_in};
       }
 
-      weights_desc = {weights_.get_dims(), data_type::s8};
+      weights_desc = weights_.get_desc().to_type(data_type::s8);
       if (weights_.get_data_type() == data_type::f32) {
         weights_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, (groups > 1)), weights_scales_in};
       }
