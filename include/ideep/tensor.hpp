@@ -50,6 +50,7 @@ class tensor : public memory {
     }
 
     /// Return size of specified dimension
+    /// XPZ: FIXME
     inline dim_t get_dim(int index) const {
       if (index < 0 || index >= data.ndims) return static_cast<dim_t>(0);
       if (!is_grouped()) {
@@ -99,8 +100,15 @@ class tensor : public memory {
     }
 
     inline dims get_strides() const {
-      auto& strides = blocking_strides();
-      return dims(strides, strides + data.ndims);
+      IDEEP_ENFORCE(is_plain(), "Call to_public() before get_strides()");
+      const auto& strides = blocking_strides();
+      if (!is_grouped()) {
+        return dims(strides, strides + data.ndims);
+      } else {
+        auto ret = dims(strides + 1, strides + data.ndims);
+        ret[0] = std::min(strides[0], strides[1]);
+        return ret;
+      }
     }
 
     /** returns true if memory descriptor is zero */
@@ -119,15 +127,27 @@ class tensor : public memory {
       return is_blocking_desc() && blocking_desc().inner_nblks == 0;
     };
 
+    inline bool is_default() const {
+      if (!is_plain()) return false;
+
+      const auto &strides = blocking_strides();
+      for (int i = 0; i < data.ndims - 1; i++) {
+        if (strides[i] < strides[i + 1]) {
+          return false;
+        }
+      }
+      return true;
+    }
+
     inline bool is_nhwc() const {
       if (!is_plain() || data.ndims != 4) return false;
       const auto &dims = data.dims;
       const auto &strides = blocking_strides();
       const auto n = 0, c = 1, h = 2, w = 3;
       return strides[n] == dims[h] * dims[w] * dims[c]
-             && strides[h] == dims[w] * dims[c]
-             && strides[w] == dims[c]
-             && strides[c] == 1;
+          && strides[h] == dims[w] * dims[c]
+          && strides[w] == dims[c]
+          && strides[c] == 1;
     };
 
     inline bool is_nchw() const {
@@ -136,9 +156,9 @@ class tensor : public memory {
       const auto &strides = blocking_strides();
       const auto n = 0, c = 1, h = 2, w = 3;
       return strides[n] == dims[c] * dims[h] * dims[w]
-             && strides[c] == dims[h] * dims[w]
-             && strides[h] == dims[w]
-             && strides[w] == 1;
+          && strides[c] == dims[h] * dims[w]
+          && strides[h] == dims[w]
+          && strides[w] == 1;
     };
 
     inline bool is_iohw() const {
@@ -147,14 +167,14 @@ class tensor : public memory {
       const auto &strides = blocking_strides();
       const auto o = 0, i = 1, h = 2, w = 3;
       return strides[i] == dims[o] * dims[h] * dims[w]
-             && strides[o] == dims[h] * dims[w]
-             && strides[h] == dims[w]
-             && strides[w] == 1;
+          && strides[o] == dims[h] * dims[w]
+          && strides[h] == dims[w]
+          && strides[w] == 1;
     };
 
     // workaround for issue intel/mkl-dnn#588
     bool is_4c_blocked() {
-      auto& blk = blocking_desc();
+      const auto& blk = blocking_desc();
       return blk.inner_nblks == 1
           && blk.inner_idxs[0] == 1 && blk.inner_blks[0] == 4;
     }
@@ -396,10 +416,7 @@ class tensor : public memory {
   desc dup_descriptor() const { return dup_desc(); }
 
   // Constructs an tensor with no buffer and zero memory description
-  tensor() {
-    reinit({dims(0), data_type::undef, format_tag::undef}, nullptr,
-           engine::cpu_engine());
-  }
+  tensor() { reinit({}, nullptr); }
 
   /// Constructs a tensor.
   ///
@@ -663,14 +680,11 @@ class tensor : public memory {
 
   /// Return an new tensor with new shape
   tensor &reshape(const dims &adims) {
-    if (!has_same_volume(adims)) {
-      throw error(dnnl_runtime_error, "reshape to incompatible shape");
-    }
+    IDEEP_ENFORCE(has_same_volume(adims), "reshape to incompatible shape");
     if (adims != get_dims()) {
-      if (!is_public_format()) {
-        *this = std::move(to_public());
+      if (!get_desc().is_default()) {
+        to_default_format();
       }
-      // XPZ: TODO: keep format structure
       set_desc({adims, get_data_type()});
     }
     return *this;
