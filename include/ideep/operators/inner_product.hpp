@@ -51,7 +51,7 @@ struct inner_product_forward : public dnnl::inner_product_forward {
   }
 
 private:
-  template <bool with_bias = true>
+  template <bool with_bias>
   static void compute_impl(const tensor& src,
                            const tensor& weights,
                            const tensor& bias,
@@ -69,7 +69,7 @@ private:
     compute_impl_<with_bias>(src_, weights, bias, dst, aprop_kind, aengine);
   }
 
-  template <bool with_bias = true>
+  template <bool with_bias>
   static void compute_impl_(const tensor& src,
                             const tensor& weights,
                             const tensor& bias,
