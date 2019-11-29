@@ -78,7 +78,15 @@ struct concat : public dnnl::concat {
     }
 
     dims offset_dims(dst_dims.size(), 0);
-    dst.reinit(dst_dims, dst_data_type);
+    if (add_axis) {
+      dst.reinit(dst_dims, dst_data_type);
+    } else {
+      // construct dst tensor with dst_dims while keeping the same
+      // blocking format as inputs[0]
+      auto dst_desc = inputs[0].get_desc().to_dims(dst_dims);
+      dst.reinit(dst_desc);
+    }
+      
     if (dst_data_type != data_type::f32)
       dst.set_scale(min_scale);
 
@@ -86,31 +94,31 @@ struct concat : public dnnl::concat {
     // FIXME: To avoid view issue in dnnl
     // NOTE: In dnnl concat, dim 3 and 6+ are not supported.
     // Morewhile, the tensor shape must be blockable to create a view.
-    // if (!add_axis && dst_dims.size() != 3 && dst_dims.size() < 6) {
-    //   for (unsigned k = 0; k < inputs.size(); k++) {
-    //     if (!inputs[k].is_limited_blockable()) {
-    //       for (int i = 0; i < inputs.size(); ++i) {
-    //         float input_scale =
-    //             inputs[i].has_scale() ? inputs[i].get_scale()[0] : 1.0f;
-    //         if (inputs[i].get_data_type() != dst_data_type ||
-    //             input_scale - min_scale[0] != 0) {
-    //           scales[0] = min_scale[0] / input_scale;
-    //           tensor input_fp(inputs[i].get_desc().to_type(dst_data_type));
-    //           inputs[i].reorder_to(input_fp, {0, scales});
-    //           inputs[i] = input_fp;
-    //         }
-    //       }
-    //       compute(inputs, axis, dst);
-    //       return axis_info;
-    //     }
-    //   }
-    // }
+    if (!add_axis && dst_dims.size() != 3 && dst_dims.size() < 6) {
+      for (unsigned k = 0; k < inputs.size(); k++) {
+        if (!inputs[k].get_desc().is_limited_blockable()) {
+          for (int i = 0; i < inputs.size(); ++i) {
+            float input_scale =
+                inputs[i].has_scale() ? inputs[i].get_scale()[0] : 1.0f;
+            if (inputs[i].get_data_type() != dst_data_type ||
+                input_scale - min_scale[0] != 0) {
+              scales[0] = min_scale[0] / input_scale;
+              tensor input_fp(inputs[i].get_desc().to_type(dst_data_type));
+              inputs[i].reorder_to(input_fp, {0, scales});
+              inputs[i] = input_fp;
+            }
+          }
+          compute(inputs, axis, dst);
+          return axis_info;
+        }
+      }
+    }
 
     for (unsigned i = 0; i < inputs.size(); ++i) {
       auto input_i = inputs[i];
       auto in_dims = inputs[i].get_dims();
-      scales[0] = min_scale[0] /
-          (input_i.has_scale() ? input_i.get_scale()[0] : 1.0f);
+      auto in_scales = input_i.has_scale() ? input_i.get_scale()[0] : 1.0;
+      scales[0] = min_scale[0] / in_scales;
       if (add_axis) {
         in_dims.insert(in_dims.begin() + axis, 1);
         input_i = input_i.reshape(in_dims);

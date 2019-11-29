@@ -179,6 +179,22 @@ class tensor : public memory {
           && blk.inner_idxs[0] == 1 && blk.inner_blks[0] == 4;
     }
 
+    // legacy API for caffe2
+    bool is_limited_blockable() const {
+      const auto& blk = blocking_desc();
+      // compute compatible block_dims with v0.x
+      dims block_dims(data.ndims, 1);
+      for (auto i = 0; i < blk.inner_nblks; i++) {
+        block_dims[blk.inner_idxs[i]] *= blk.inner_blks[i]; 
+      }
+      for (auto i = 0; i < data.ndims; i++) {
+        if (data.dims[i] < block_dims[i]) continue;
+        if (data.dims[i] % block_dims[i] == 0) continue;
+        return false;
+      }
+      return true;
+    }
+
     desc to_format(format_tag aformat_tag) const {
       auto ret = desc(get_internal_dims(), get_data_type(), aformat_tag);
       ret.set_g(g());
