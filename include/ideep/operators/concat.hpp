@@ -16,15 +16,39 @@ struct concat : public dnnl::concat {
       return static_cast<memory::desc>(t.get_desc());
     });
 
-    // XPZ: TODO: reorder to same format
-
+    // create a pd to query the optimimal format for src and dst
     auto pd = primitive_desc(axis, input_descs, aengine);
+    auto expected_desc = tensor::desc(pd.dst_desc());
 
-    output.reinit_if_necessary(pd.dst_desc());
+    output.reinit_if_necessary(expected_desc);
 
     exec_args args {{DNNL_ARG_DST, output}};
-    for (int i = 0; i < inputs.size(); ++i) {
-      args.insert({DNNL_ARG_MULTIPLE_SRC + i, inputs[i]});
+
+    // DNNL currently supports two types of implementations in the concat:
+    //   (Very fast) Works only when all memories are in the same format
+    //   (Slower) Generic one, based on reorders: concat of n tensors is a set
+    //            of n reorders from input to the proper part of the output
+    // In case you have only two inputs there should not be performance 
+    // difference between reordering one input to the format of the other one 
+    // and emit the fast concat implementation versus using generic concat which // emits two reorders. So we align all tensors to the same optimial format
+    // only when there are more than two inputs.
+    auto opt_inputs = inputs;
+    if (inputs.size() > 2) {
+      opt_inputs = utils::fmap(inputs, [&](const tensor& t) {
+        // construct a desc with dims of t and keep expected blocking format
+        auto desc = expected_desc.to_dims(t.get_dims());
+        // then reorder t to expected format if necessary
+        return t.reorder_if_differ_in(desc);
+      });
+      input_descs = utils::fmap(opt_inputs, [](const tensor& t) {
+        return static_cast<memory::desc>(t.get_desc());
+      });
+      // recreate the pd on new inputs with same formats
+      pd = primitive_desc(axis, input_descs, aengine);
+    }
+
+    for (int i = 0; i < opt_inputs.size(); ++i) {
+      args.insert({DNNL_ARG_MULTIPLE_SRC + i, opt_inputs[i]});
     }
 
     super(pd).execute(stream::default_stream(), args);
