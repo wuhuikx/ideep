@@ -64,8 +64,8 @@ const std::map<data_type, int> dt_max_map
 };
 
 enum lowp_kind {
-  u8s8 = 0,
-  s8s8 = 1
+  LOWP_U8S8 = 0,
+  LOWP_S8S8 = 1
 };
 
 enum rnn_kind {

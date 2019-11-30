@@ -23,14 +23,26 @@ struct pooling_forward : public dnnl::pooling_forward {
     // workaround: use src.get_desc() once issue intel/mkl-dnn#588 is resolved
     auto src_desc = src._get_unblocked_desc_if_4c_blocked();
     // auto src_desc = src.get_desc();
-    auto dst_desc = tensor::desc(output_sizes, data_type::f32).to_format_any();
+
+    tensor::desc dst_desc;
+    if (src.get_desc().is_nhwc())
+      // workaground: will remove after the issue intel/mkl-dnn#598 is resolved.
+      dst_desc = tensor::desc (output_sizes, src.get_data_type(), tag::nhwc);
+    else
+      dst_desc = tensor::desc(output_sizes, src.get_data_type()).to_format_any();
+
 
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,
          padding_r}, aengine);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    if (dst != src) {
+      dst.reinit_if_necessary(pd.dst_desc());
+      if (src.has_scale()) {
+        dst.set_scale(src.get_scale());
+      }
+    }
 
     exec_args args {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};
     if (with_workspace) {
