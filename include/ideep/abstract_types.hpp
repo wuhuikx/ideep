@@ -38,6 +38,11 @@ namespace ideep {
 #define IDEEP_STD_EACH_SUB(v, i) \
   for (auto it = v.begin(); it != v.end(); it++) {*it -= i;}
 
+// For convolution with grouped weights, the ndims must be 5 (goihw) or 6
+// (goidhw)
+#define IDEEP_IS_GROUPED(id, wd) \
+  (((id == 4 && (wd).size() == 5) || (id == 5 && (wd).size() == 6)) ? 1 : 0)
+
 #define IDEEP_MOD_PTR(ptr, bytes) (((uintptr_t)(ptr)) & ((bytes) - 1))
 #define IDEEP_IS_ALIGNED_PTR(ptr, bytes) ((IDEEP_MOD_PTR(ptr, bytes)) == 0)
 
@@ -107,8 +112,8 @@ const std::map<data_type, int> dt_max_map
 };
 
 enum lowp_kind {
-  u8s8 = 0,
-  s8s8 = 1
+  LOWP_U8S8 = 0,
+  LOWP_S8S8 = 1
 };
 
 enum rnn_kind {

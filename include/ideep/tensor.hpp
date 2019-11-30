@@ -9,8 +9,8 @@ namespace ideep {
 
 class tensor : public memory {
  public:
-  using dims = memory::dims;
-  using dim_t = dims::value_type;
+  // using dims = memory::dims;
+  using dim_t = dnnl_dim_t;
   using dims_t = dnnl_dims_t;
   using format_kind_t = dnnl_format_kind_t;
   using blocking_desc_t = dnnl_blocking_desc_t;
@@ -237,17 +237,71 @@ class tensor : public memory {
     }
 
     desc to_grouped(int groups) const {
-      auto dims = get_dims();
-      dims.insert(dims.begin(), groups);
-      dims[1] /= groups;
-      return desc(dims, get_data_type()); // default goihw for 5d, goidhw for 6d
+      auto ret = clone();
+
+      auto& dims = ret.data.dims;
+      auto& paddim = ret.data.padded_dims;
+      auto& blk = ret.data.format_desc.blocking;
+      auto& strides = blk.strides;
+
+      auto second_dim_blocks = 1;
+
+      for (size_t i = 0; i < blk.inner_nblks; i++) {
+        // assume most significant dim g is not blocked
+        blk.inner_idxs[i] += 1;
+        if (blk.inner_idxs[i] == 1)
+          second_dim_blocks *= blk.inner_blks[i];
+      }
+
+      for (size_t i = ret.data.ndims; i >= 2; i--) {
+        dims[i] = dims[i - 1];
+        paddim[i] = paddim[i - 1];
+        strides[i] = strides[i - 1];
+      }
+
+      ret.data.ndims += 1;
+
+      dims[1] = dims[0] / groups;
+      paddim[1] = paddim[0] / groups;
+      strides[1] = strides[0];
+
+      dims[0] = groups;
+      paddim[0] = groups;
+      strides[0] = strides[1] * paddim[1] / second_dim_blocks;
+
+      return ret;
     }
 
     desc to_ungrouped() const {
-      auto dims = get_dims();
-      dims[1] *= dims[0]; // g == dims[0]
-      dims.erase(dims.begin());
-      return desc(dims, get_data_type()); // default oihw for 4d, oidhe for 5d
+      IDEEP_ENFORCE(ndims() >= 2, "Cannot ungroup a descriptor with ndims < 2");
+
+      auto ret = clone();
+
+      auto &dims = ret.data.dims;
+      auto &paddim = ret.data.padded_dims;
+      auto &blk = ret.data.format_desc.blocking;
+      auto &strides = blk.strides;
+
+      // merge top two dims
+      dims[0] *= dims[1];
+      paddim[0] *= paddim[1];
+      strides[0] = strides[1];
+
+      // move each dim to the left 
+      for (size_t i = 2; i < ret.data.ndims; i++) {
+        dims[i - 1] = dims[i];
+        paddim[i - 1] = paddim[i];
+        strides[i - 1] = strides[i];
+      }
+
+      ret.data.ndims -= 1;
+
+      for (size_t i = 0; i < blk.inner_nblks; i++) {
+        // assume most significant dim g is not blocked
+        blk.inner_idxs[i] -= 1;
+      }
+
+      return ret;
     }
 
     desc permute(const std::vector<int> &permute_axes = {}) const {
@@ -353,7 +407,6 @@ class tensor : public memory {
     }
 
    private:
-
     const dims_t &padded_dims() const { return data.padded_dims; }
 
     const dims_t &padded_offsets() const { return data.padded_offsets; }
@@ -513,6 +566,7 @@ class tensor : public memory {
     scale_ = t.scale_;
     workspace_ = t.workspace_;
     eng_ = t.eng_;
+    groups_ = t.groups_;
   }
 
   /// Move constructor
@@ -521,6 +575,7 @@ class tensor : public memory {
     scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
     eng_ = std::move(t.eng_);
+    groups_ = t.groups_;
   }
 
   /// Assignment operator
@@ -530,6 +585,7 @@ class tensor : public memory {
     scale_ = t.scale_;
     workspace_ = t.workspace_;
     eng_ = t.eng_;
+    groups_ = t.groups_;
     return *this;
   }
 
@@ -540,6 +596,7 @@ class tensor : public memory {
     scale_ = std::move(t.scale_);
     workspace_ = std::move(t.workspace_);
     eng_ = std::move(t.eng_);
+    groups_ = t.groups_;
     return *this;
   }
 
@@ -603,12 +660,14 @@ class tensor : public memory {
     std::cout << std::endl;
   }
 
-  tensor reorder_if_differ_in(const memory::desc &expected_desc) const {
+  tensor reorder_if_differ_in(const memory::desc &expected_desc, const attr_t &aattr = attr_t()) const {
     if (expected_desc == get_desc()) {
       return *this;
     } else {
       tensor dst{expected_desc};
-      this->reorder_to(dst);
+      this->reorder_to(dst, aattr);
+      // if (has_scale())
+      // dst.set_scale(get_scale());
       return dst;
     }
   }
@@ -624,7 +683,19 @@ class tensor : public memory {
 
   // no data copy
   tensor make_grouped_weights(int groups) const {
-    if (groups <= 1) {
+    // if (groups <= 1) {
+    //   return *this;
+    // } else {
+    //   auto old_desc = get_desc();
+    //   auto grouped_desc =
+    //       old_desc.is_iohw() || old_desc.is_iodhw()
+    //           ? old_desc.transpose(0, 1).to_grouped(groups).transpose(1, 2)
+    //           : old_desc.to_grouped(groups);
+    //   auto this_copy = *this;
+    //   this_copy.set_desc(grouped_desc);
+    //   return this_copy;
+    // }
+    if (get_groups() == groups) {
       return *this;
     } else {
       auto old_desc = get_desc();
@@ -634,6 +705,7 @@ class tensor : public memory {
               : old_desc.to_grouped(groups);
       auto this_copy = *this;
       this_copy.set_desc(grouped_desc);
+      this_copy.set_groups(groups);
       return this_copy;
     }
   }
@@ -661,9 +733,10 @@ class tensor : public memory {
     return *this;
   }
 
-  inline void reorder_from(const tensor &src) {
+  inline void reorder_from(const tensor &src, const attr_t &aattr = attr_t()) {
     // https://github.com/intel/mkl-dnn/issues/571
-    dnnl::reorder(src, *this)
+    auto pd = dnnl::reorder::primitive_desc(src, *this, aattr);
+    dnnl::reorder(pd)
         .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
   }
 
@@ -678,12 +751,47 @@ class tensor : public memory {
   inline tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
     auto dst = buffer ? tensor(get_dims(), get_data_type(), buffer)
                       : tensor(get_dims(), get_data_type());
-    this->reorder_to(dst);
+    if (scale_out && has_scale()) {
+      auto& src_scale = get_scale();
+      scale_t scales(src_scale.size());
+      for (int i = 0 ; i < src_scale.size(); i++) {
+        scales[i] = 1.0f / src_scale[i];
+      }
+      int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), (get_groups() > 1));
+      this->reorder_to(dst, {mask, scales});
+    } else {
+      this->reorder_to(dst);
+      if (has_scale()) {
+        dst.set_scale(get_scale());
+      }
+    }
     return dst;
   }
 
   /// Fill the tensor with a src tensor
-  void feed_from(const tensor &src) { this->reorder_from(src); }
+  void feed_from(const tensor &src) {
+    scale_t dst_scale, src_scale;
+    if (has_scale() && src.has_scale()) {
+      dst_scale = get_scale();
+      src_scale = src.get_scale();
+    } else if (has_scale()) {
+      dst_scale = get_scale();
+      src_scale.assign(dst_scale.size(), 1.0f);
+    } else if (src.has_scale()) {
+      src_scale = src.get_scale();
+      dst_scale.assign(src_scale.size(), 1.0f);
+    } else {
+      dst_scale = IDEEP_DEF_SCALE;
+      src_scale = IDEEP_DEF_SCALE;
+    }
+    IDEEP_ENFORCE(dst_scale.size() == src_scale.size(), "Invalid tensor scales");
+    scale_t scales(dst_scale.size());
+    for (int i = 0; i < dst_scale.size(); i++) {
+      scales[i] = dst_scale[i] / src_scale[i];
+    }
+    int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), false);
+    this->reorder_from(src, {mask, scales});
+  }
 
   // For backward compatibility. Will be deprecated.
   void feed_from(const dims &adims, data_type adata_type, const void *array) {
@@ -717,11 +825,38 @@ class tensor : public memory {
 
   /// Reordering weights
   void feed_from_weights(const tensor &src, int groups = 1) {
-    auto mask_dst = this->make_grouped_weights(groups);
+    scale_t dst_scale, src_scale;
+    if (has_scale() && src.has_scale()) {
+      dst_scale = get_scale();
+      src_scale = src.get_scale();
+    } else if (has_scale()) {
+      dst_scale = get_scale();
+      src_scale.assign(dst_scale.size(), 1.0f);
+    } else if (src.has_scale()) {
+      src_scale = src.get_scale();
+      dst_scale.assign(src_scale.size(), 1.0f);
+    } else {
+      dst_scale = IDEEP_DEF_SCALE;
+      src_scale = IDEEP_DEF_SCALE;
+    }
+    IDEEP_ENFORCE(dst_scale.size() == src_scale.size(), "Invalid tensor scales");
+    scale_t scales(dst_scale.size());
+    for (int i = 0; i < dst_scale.size(); i++) {
+      scales[i] = dst_scale[i] / src_scale[i];
+    }
+    int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), (groups > 1));
+    // this->reorder_from(src, {mask, scales});
+    // auto mask_dst = this->make_grouped_weights(groups);
     auto mask_src = src.make_grouped_weights(groups);
-    dnnl::reorder(mask_src, mask_dst).execute(stream::default_stream(),
-                                              const_cast<tensor &>(mask_src),
-                                              mask_dst);
+    attr_t attr {mask, scales};
+    // auto pd = dnnl::reorder::primitive_desc(mask_src, mask_dst, attr);
+    auto pd = dnnl::reorder::primitive_desc(mask_src, *this, attr);
+    dnnl::reorder(pd)
+        .execute(stream::default_stream(), mask_src, const_cast<tensor &>(*this));
+    this->set_groups(groups);
+    // dnnl::reorder(mask_src, mask_dst).execute(stream::default_stream(),
+    //                                           const_cast<tensor &>(mask_src),
+    //                                           mask_dst);
   }
 
   // data copy
@@ -780,16 +915,6 @@ class tensor : public memory {
     *this = std::move(src.permute(perms));
   }
 
- private:
-  bool has_same_volume(const dims &new_dims) const {
-    auto old_dims = get_dims();
-    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
-                                      std::multiplies<dim_t>());
-    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
-                                      std::multiplies<dim_t>());
-    return volume_old == volume_new;
-  }
-
   /// Set a descriptor into tensor to replace the older one, keep buffer
   /// It is caller's responsibility to make sure the original buffer is large
   /// enough for specified descriptor
@@ -804,10 +929,43 @@ class tensor : public memory {
     scale_ = std::move(scale);
   }
 
+  const int get_groups() const {
+    return groups_;
+  }
+
+  void set_groups(int groups) {
+    groups_ = groups;
+  }
+
+ private:
+  bool has_same_volume(const dims &new_dims) const {
+    auto old_dims = get_dims();
+    auto volume_old = std::accumulate(old_dims.begin(), old_dims.end(), 1,
+                                      std::multiplies<dim_t>());
+    auto volume_new = std::accumulate(new_dims.begin(), new_dims.end(), 1,
+                                      std::multiplies<dim_t>());
+    return volume_old == volume_new;
+  }
+
+  // /// Set a descriptor into tensor to replace the older one, keep buffer
+  // /// It is caller's responsibility to make sure the original buffer is large
+  // /// enough for specified descriptor
+  // void set_desc(const desc &new_desc) {
+  //   // Keep the original management
+  //   auto buf = std::move(buffer_);
+  //   auto ws = std::move(workspace_);
+  //   auto scale = std::move(scale_);
+  //   reinit(new_desc, get_data_handle(), get_engine());
+  //   buffer_ = std::move(buf);
+  //   workspace_ = std::move(ws);
+  //   scale_ = std::move(scale);
+  // }
+
   std::shared_ptr<tensor> workspace_;
   std::shared_ptr<scale_t> scale_;
   std::shared_ptr<void> buffer_;
   engine eng_;
+  int groups_ = 1;
 };
 
 }  // namespace ideep
