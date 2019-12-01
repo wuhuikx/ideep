@@ -84,8 +84,8 @@ using scale_t = std::vector<float>;
 
 using memory = dnnl::memory;
 using format_tag = memory::format_tag;
-using data_type = memory::data_type;
-using dims = memory::dims;
+using data_type = typename memory::data_type;
+using dims = typename memory::dims;
 using dim = memory::dim;
 using query = dnnl::query;
 using kind = dnnl::primitive::kind;
@@ -96,6 +96,7 @@ using query = dnnl::query;
 using exec_args = std::unordered_map<int, memory>;
 
 #define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
+#define IDEEP_OP_ZP_MASK(zero_point_size) (((zero_point_size) > 1) ? 2 : 0)
 #define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
   (((scale_size) > 1) ? ((grouped) ? 3 : 1) : 0)
 
