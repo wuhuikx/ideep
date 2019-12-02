@@ -157,7 +157,7 @@ private:
 
       weights_desc = {weights.get_dims(), data_type::s8, format_tag::any};
       if (weights.get_data_type() == data_type::f32) {
-        weights_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, false),
+        weights_attr = {utils::tensor_scale_mask(scale_size, false),
                         weights_scales_in};
       }
 
@@ -179,12 +179,12 @@ private:
         bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
         op_scales[i] = dst_scales_in[0] / bias_scales[i];
       }
-      op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
+      op_attr.set_output_scales(utils::op_scale_mask(scale_size), op_scales);
 
       if (with_bias) {
         bias_desc = {bias.get_dims(), data_type::s32, format_tag::any};
         if (bias.get_data_type() == data_type::f32) {
-          bias_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, false), bias_scales};
+          bias_attr = {utils::tensor_scale_mask(scale_size, false), bias_scales};
         }
       }
     } else {

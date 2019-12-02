@@ -777,10 +777,10 @@ class tensor : public memory {
         (groups = src.get_desc().g()) > 1) {
       auto mask_dst = this->make_grouped_weights(groups, is_deconv_weights);
       auto mask_src = src.make_grouped_weights(groups, is_deconv_weights);
-      int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), true);
+      int mask = utils::tensor_scale_mask(src_scale.size(), true);
       mask_src.reorder_to(mask_dst, {mask, scales});
     } else {
-      int mask = IDEEP_TENSOR_SCALE_MASK(src_scale.size(), false);
+      int mask = utils::tensor_scale_mask(src_scale.size(), false);
       src.reorder_to(*this, {mask, scales});
     }
   }

@@ -47,21 +47,7 @@ using exec_args = std::unordered_map<int, memory>;
 #define IDEEP_ENFORCE(condition, message)
 #endif
 
-#define IDEEP_OP_SCALE_MASK(scale_size) (((scale_size) > 1) ? 2 : 0)
-#define IDEEP_TENSOR_SCALE_MASK(scale_size, grouped) \
-  (((scale_size) > 1) ? ((grouped) ? 3 : 1) : 0)
-
 const scale_t IDEEP_DEF_SCALE {1.0f};
-
-constexpr int IDEEP_U8_MAX = 0xFF;
-constexpr int IDEEP_S8_MAX = 0x7F;
-constexpr int IDEEP_S32_MAX = 0x7FFFFFFF;
-const std::map<data_type, int> dt_max_map
-{
-  {data_type::s32, IDEEP_S32_MAX},
-  {data_type::s8, IDEEP_S8_MAX},
-  {data_type::u8, IDEEP_U8_MAX}
-};
 
 enum lowp_kind {
   LOWP_U8S8 = 0,

@@ -258,7 +258,7 @@ private:
       } else if (attr.has_op_kind(kind::eltwise)) {
         op_attr = attr_t::fuse_relu();
       }
-      op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
+      op_attr.set_output_scales(utils::op_scale_mask(scale_size), op_scales);
 
       src_desc = {src.get_dims(), alowp_kind == LOWP_U8S8 ? data_type::u8 : data_type::s8};
       if (src.get_data_type() == data_type::f32) {
@@ -267,13 +267,13 @@ private:
 
       weights_desc = weights_.get_desc().to_type(data_type::s8);
       if (weights_.get_data_type() == data_type::f32) {
-        weights_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, (groups > 1)), weights_scales_in};
+        weights_attr = {utils::tensor_scale_mask(scale_size, (groups > 1)), weights_scales_in};
       }
 
       if (with_bias) {
         bias_desc = {bias.get_dims(), data_type::s32};
         if (bias.get_data_type() == data_type::f32) {
-          bias_attr = {IDEEP_TENSOR_SCALE_MASK(scale_size, false), bias_scales};
+          bias_attr = {utils::tensor_scale_mask(scale_size, false), bias_scales};
         }
       }
     } else {
