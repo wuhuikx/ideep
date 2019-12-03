@@ -151,23 +151,30 @@ private:
        op_scales[i] = dst_scales_in[0] / bias_scales[i];
      }
      op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
-    //  op_attr.set_int_output_round_mode(round_mode::round_nearest);
+     // op_attr.set_int_output_round_mode(round_mode::round_nearest);
      
      auto src_zero_point = src.has_zero_point()
          ? src.get_zero_point() : std::vector<int32_t>(1);
      auto wei_zero_point = weights.has_zero_point()
          ? weights.get_zero_point() : std::vector<int32_t>(1);
-     auto dst_zero_point = dst.has_zero_point()
-         ? dst.get_zero_point() : std::vector<int32_t>(1);
      IDEEP_ENFORCE(
-         src_zero_point.size() == 1 && wei_zero_point.size() == 1 && dst_zero_point.size() == 1, 
+         src_zero_point.size() == 1 && wei_zero_point.size() == 1, 
 	 "DNNL only support 1-dim zero_point");
      op_attr.set_zero_points(DNNL_ARG_SRC, 
 		     IDEEP_OP_ZP_MASK(src_zero_point.size()), src_zero_point);
      op_attr.set_zero_points(DNNL_ARG_WEIGHTS, 
 		     IDEEP_OP_ZP_MASK(wei_zero_point.size()), wei_zero_point);
-     op_attr.set_zero_points(DNNL_ARG_DST, 
-		     IDEEP_OP_ZP_MASK(dst_zero_point.size()), dst_zero_point);
+     
+     if (dst_data_type != data_type::f32) {
+       auto dst_zero_point = dst.has_zero_point()
+           ? dst.get_zero_point() : std::vector<int32_t>(1);
+       IDEEP_ENFORCE(
+           dst_zero_point.size() == 1, 
+	   "DNNL only support 1-dim zero_point");
+       op_attr.set_zero_points(DNNL_ARG_DST, 
+  		     IDEEP_OP_ZP_MASK(dst_zero_point.size()), dst_zero_point);
+     }
+
      if (with_bias) {
        bias_desc = {bias.get_dims(), data_type::s32, format_tag::any};
        if (bias.get_data_type() == data_type::f32) {
