@@ -3,8 +3,8 @@
 
 namespace ideep {
 
-struct convolution_forward : public dnnl::convolution_forward {
-
+struct convolution_forward : public dnnl::convolution_forward,
+                             utils::computation_cache<dnnl::primitive> {
   using super = dnnl::convolution_forward;
 
   // fp32 w/ bias
@@ -177,10 +177,25 @@ private:
     auto dst_desc = attr.has_op_kind(kind::sum)
                         ? dst.get_desc()
                         : tensor::desc(dst_dims, src.get_data_type());
-    auto pd = get_primitive_desc<with_bias>(
-        src.get_desc(), weights_.get_desc(), bias.get_desc(), dst_desc,
-        strides, dilates_, padding_l, padding_r, attr, aalgorithm,
-        aprop_kind, aengine);
+
+    auto src_desc = src.get_desc();
+    auto weights_desc = weights_.get_desc();
+    auto bias_desc = bias.get_desc();
+
+    auto key = utils::create_key(src_desc, weights_desc, with_bias, strides,
+                                 dilates_, padding_l, padding_r, attr);
+    auto comp = fetch_or_create_m(key, [&]() {
+      auto pd = get_primitive_desc<with_bias>(
+          src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
+          padding_l, padding_r, attr, aalgorithm, aprop_kind, aengine);
+      return super(pd);
+    });
+    auto pd = conv_pd_wrapper(comp);
+
+    // auto pd = get_primitive_desc<with_bias>(
+    //     src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
+    //     padding_l, padding_r, attr, aalgorithm, aprop_kind, aengine);
+    // auto comp = super(pd);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
@@ -188,16 +203,16 @@ private:
 
     if (with_bias) {
       auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc());
-      super(pd).execute(stream::default_stream(), 
-                        {{DNNL_ARG_SRC, expected_src},
-                         {DNNL_ARG_WEIGHTS, expected_weights},
-                         {DNNL_ARG_BIAS, expected_bias},
-                         {DNNL_ARG_DST, dst}});
+      comp.execute(stream::default_stream(), 
+                   {{DNNL_ARG_SRC, expected_src},
+                    {DNNL_ARG_WEIGHTS, expected_weights},
+                    {DNNL_ARG_BIAS, expected_bias},
+                    {DNNL_ARG_DST, dst}});
     } else {
-      super(pd).execute(stream::default_stream(), 
-                        {{DNNL_ARG_SRC, expected_src},
-                         {DNNL_ARG_WEIGHTS, expected_weights},
-                         {DNNL_ARG_DST, dst}});
+      comp.execute(stream::default_stream(), 
+                   {{DNNL_ARG_SRC, expected_src},
+                    {DNNL_ARG_WEIGHTS, expected_weights},
+                    {DNNL_ARG_DST, dst}});
     }
   }
 };

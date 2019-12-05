@@ -2,6 +2,7 @@
 #define IDEEP_ATTRIBUTES_HPP
 
 #include "abstract_types.hpp"
+#include "utils.hpp"
 
 namespace ideep {
 
@@ -71,7 +72,7 @@ struct attr_t : public dnnl::primitive_attr {
     algorithm alg;
     float scale = 1.0, alpha = 1.0, beta = 0.0;
 
-    auto akind = kind(index);
+    auto akind = po.kind(index);
     switch (akind) {
       case kind::sum:
         po.get_params_sum(index, scale);
@@ -101,6 +102,36 @@ struct attr_t : public dnnl::primitive_attr {
       return false;
 
     return true;
+  }
+
+  void to_bytes(utils::bytestring& bytes) const {
+    auto num_ops = get_post_ops().len();
+    for (int i = 0; i < num_ops; i ++) {
+      kind akind;
+      algorithm alg;
+      float scale = 1.0, alpha = 1.0, beta = 0.0;
+      std::tie(akind, scale, alpha, beta, alg) = get_params(i);
+
+      switch(akind) {
+        case kind::sum:
+          utils::to_bytes(bytes, akind);
+          bytes.append(1, '.');
+          utils::to_bytes(bytes, scale);
+          break;
+        case kind::eltwise:
+          utils::to_bytes(bytes, akind);
+          bytes.append(1, '.');
+          utils::to_bytes(bytes, scale);
+          bytes.append(1, '.');
+          utils::to_bytes(bytes, alpha);
+          bytes.append(1, '.');
+          utils::to_bytes(bytes, beta);
+          bytes.append(1, '.');
+          utils::to_bytes(bytes, alg);
+        default:
+          break;
+      }
+    }
   }
 };
 

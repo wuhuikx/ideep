@@ -37,6 +37,9 @@ using query = dnnl::query;
 using scale_t = std::vector<float>;
 using exec_args = std::unordered_map<int, memory>;
 
+// for computation cache
+using key_t = std::string;
+
 #ifndef NDEBUG
 #define IDEEP_ENFORCE(condition, message) \
   do {  \

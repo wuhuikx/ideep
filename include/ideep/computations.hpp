@@ -1,6 +1,9 @@
 #ifndef IDEEP_COMPUTATIONS_HPP
 #define IDEEP_COMPUTATIONS_HPP
 
+#include "lru_cache.hpp"
+#include "operators/pd_wrapper.hpp"
+
 #include "operators/batchnorm.hpp"
 #include "operators/binary.hpp"
 #include "operators/channel_shuffle.hpp"

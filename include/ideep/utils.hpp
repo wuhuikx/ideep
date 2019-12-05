@@ -58,6 +58,87 @@ static void bernoulli_generate(const long n, const double p, int* r) {
 #endif
 }
 
+using bytestring = std::string;
+
+inline void to_bytes(bytestring& bytes, const int arg) {
+  auto as_cstring = reinterpret_cast<const char*>(&arg);
+  if (arg == 0) return;
+  auto len = sizeof(arg) - (__builtin_clz(arg) / 8);
+  bytes.append(as_cstring, len);
+}
+
+inline void to_bytes(bytestring& bytes, const bool arg) {
+  to_bytes(bytes, arg ? 1 : 0);
+  bytes.append(1, 'b');
+}
+
+inline void to_bytes(bytestring& bytes, const float arg) {
+  auto as_cstring = reinterpret_cast<const char*>(&arg);
+  bytes.append(as_cstring, sizeof(float));
+}
+
+inline void to_bytes(bytestring& bytes, const uint64_t arg) {
+  auto as_cstring = reinterpret_cast<const char*>(&arg);
+  bytes.append(as_cstring, sizeof(uint64_t));
+}
+
+inline void to_bytes(bytestring& bytes, const int64_t arg) {
+  auto as_cstring = reinterpret_cast<const char*>(&arg);
+  bytes.append(as_cstring, sizeof(int64_t));
+}
+
+template <typename T>
+inline void to_bytes(bytestring& bytes, std::vector<T>& arg) {
+  if (arg.size() > 0) {
+    for (T elems : arg) {
+      to_bytes(bytes, elems);
+      bytes.append(1, 'v');
+    }
+    bytes.pop_back();
+  } else {
+    bytes.append(1, 'v');
+  }
+}
+
+template <typename T>
+inline void to_bytes(bytestring& bytes, const std::vector<T>& arg) {
+  // remove constness, then jumps to `to_bytes(bytestring&, vector<T>&)`
+  to_bytes(bytes, const_cast<std::vector<T>&>(arg));
+}
+
+template <typename T>
+inline void to_bytes(bytestring& bytes, std::vector<T>&& arg) {
+  // `arg` is an lval ref now, then jumps to `to_bytes(bytestring&, vector<T>&)`
+  to_bytes(bytes, arg);
+}
+
+template <typename T,
+          typename = typename std::enable_if<std::is_enum<T>::value>::type>
+inline void to_bytes(bytestring& bytes, T arg) {
+  to_bytes(bytes, static_cast<int>(arg));
+}
+
+template <typename T,
+          typename = typename std::enable_if<std::is_class<T>::value>::type,
+          typename = void>
+inline void to_bytes(bytestring& bytes, const T arg) {
+  arg.to_bytes(bytes);
+}
+
+template <typename T, typename ...Ts>
+inline void to_bytes(bytestring& bytes, T&& arg, Ts&&... args) {
+  to_bytes(bytes, std::forward<T>(arg));
+  bytes.append(1, '*');
+  to_bytes(bytes, std::forward<Ts>(args)...);
+}
+
+template <typename ...Ts>
+inline key_t create_key(Ts&&... args) {
+  key_t k;
+  to_bytes(k, std::forward<Ts>(args)...);
+  return k;
+}
+
 template <typename F, typename T,
           typename U = decltype(std::declval<F>()(std::declval<T>()))>
 std::vector<U> fmap(const std::vector<T>& vec, F f) {
@@ -132,7 +213,7 @@ inline void simultaneous_sort(T *vals, U *keys, size_t size, F comparator) {
 
 template <typename T>
 inline T rnd_up(const T a, const T b) {
-    return (a + b - 1) / b * b;
+  return (a + b - 1) / b * b;
 }
 
 inline int op_scale_mask(dim scale_size) {
@@ -153,21 +234,21 @@ inline bool is_aligned_ptr(void *ptr, size_t bytes) {
 
 template <typename T>
 inline void array_copy(T *dst, const T *src, size_t size) {
-    for (size_t i = 0; i < size; ++i)
-        dst[i] = src[i];
+  for (size_t i = 0; i < size; ++i)
+    dst[i] = src[i];
 }
 
 template <typename T>
 inline bool array_cmp(const T *a1, const T *a2, size_t size) {
-    for (size_t i = 0; i < size; ++i)
-        if (a1[i] != a2[i]) return false;
-    return true;
+  for (size_t i = 0; i < size; ++i)
+    if (a1[i] != a2[i]) return false;
+  return true;
 }
 
 template <typename T, typename U>
 inline void array_set(T *arr, const U &val, size_t size) {
-    for (size_t i = 0; i < size; ++i)
-        arr[i] = static_cast<T>(val);
+  for (size_t i = 0; i < size; ++i)
+    arr[i] = static_cast<T>(val);
 }
 
 }
