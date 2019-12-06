@@ -24,13 +24,7 @@ struct pooling_forward : public dnnl::pooling_forward {
     auto src_desc = src._get_unblocked_desc_if_4c_blocked();
     // auto src_desc = src.get_desc();
 
-    tensor::desc dst_desc;
-    if (src.get_desc().is_nhwc())
-      // workaground: will remove after the issue intel/mkl-dnn#598 is resolved.
-      dst_desc = tensor::desc (output_sizes, src.get_data_type(), tag::nhwc);
-    else
-      dst_desc = tensor::desc(output_sizes, src.get_data_type()).to_format_any();
-
+    tensor::desc dst_desc(output_sizes, src.get_data_type(), tag::any);
 
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, dst_desc, strides, kernel, padding_l,
