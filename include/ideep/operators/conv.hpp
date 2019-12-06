@@ -301,18 +301,18 @@ private:
                         : tensor::desc(dst_dims, dst_data_type);
 
     auto key = utils::create_key(src_desc, weights_desc, with_bias, strides,
-                                 dilates_, padding_l, padding_r, attr);
+                                 dilates_, padding_l, padding_r, op_attr);
     auto comp = fetch_or_create_m(key, [&]() {
       auto pd = get_primitive_desc<with_bias>(
           src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
-          padding_l, padding_r, attr, aalgorithm, aprop_kind, aengine);
+          padding_l, padding_r, op_attr, aalgorithm, aprop_kind, aengine);
       return super(pd);
     });
     auto pd = conv_pd_wrapper(comp);
 
     // auto pd = get_primitive_desc<with_bias>(
     //     src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
-    //     padding_l, padding_r, attr, aalgorithm, aprop_kind, aengine);
+    //     padding_l, padding_r, op_attr, aalgorithm, aprop_kind, aengine);
     // auto comp = super(pd);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc(), src_attr);

@@ -105,6 +105,7 @@ struct attr_t : public dnnl::primitive_attr {
   }
 
   void to_bytes(utils::bytestring& bytes) const {
+    // encode post ops
     auto num_ops = get_post_ops().len();
     for (int i = 0; i < num_ops; i ++) {
       kind akind;
@@ -132,6 +133,11 @@ struct attr_t : public dnnl::primitive_attr {
           break;
       }
     }
+
+    // encode output scales
+    auto scales = get_output_scales();
+    utils::to_bytes(bytes, scales.first);
+    utils::to_bytes(bytes, scales.second);
   }
 };
 
