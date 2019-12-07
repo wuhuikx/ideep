@@ -77,13 +77,13 @@ class tensor : public memory {
     }
 
     /// Return size of specified dimension
-    /// XPZ: FIXME
     inline dim_t get_dim(int index) const {
-      if (index < 0 || index >= data.ndims) return static_cast<dim_t>(0);
       if (!is_grouped()) {
+        if (index < 0 || index >= data.ndims) return static_cast<dim_t>(0);
         return data.dims[index];
       } else {
-        return index <= 1 ? data.dims[0] * data.dims[1] : data.dims[index - 1];
+        if (index < 0 || index >= data.ndims - 1) return static_cast<dim_t>(0);
+        return index == 0 ? data.dims[0] * data.dims[1] : data.dims[index + 1];
       }
     }
 
@@ -241,7 +241,6 @@ class tensor : public memory {
     }
 
     desc clone() const {
-      // XPZ: TODO: to be tested
       return desc(*this);
     }
 
