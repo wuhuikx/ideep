@@ -747,22 +747,32 @@ class tensor : public memory {
   }
 
   /// Convert the tensor to public format, and f32 data type by default
-  // XPZ: TODO: scale_out ??
-  tensor to_public(void *buffer = nullptr, bool scale_out = true) const {
-    // If we got a non-plain blocking format, say `Acdb16A`, we will convert it
-    // to its default format `abcd` based on its dimensions
-    auto public_desc =
-        is_public_format() ? get_desc() : desc(get_dims(), get_data_type());
-    auto dst = buffer ? tensor(public_desc, buffer) : tensor(public_desc);
+  tensor to_public(void *buffer = nullptr, bool dequantize = true) const {
+    // xpz: we may separate dequantization capability from to_public() to a
+    // standalone function, say tensor::dequantize(). The to_public() should
+    // only deal with the format conversions, not data type stuff.
+    auto dt = get_data_type();
+    auto dst_type = dequantize && dt != data_type::bf16 ? data_type::f32 : dt;
 
-    if (get_desc().g() > 1) {
-      auto mask_dst = dst.make_grouped_weights(get_desc().g());
-      this->reorder_to(mask_dst);
-    } else
+    // If we get a non-plain blocking format, say `Acdb16A`, we may not be able 
+    // to recover it to its "unblocked" format `acdb`. Instead, we will convert
+    // it to its default format `abcd` based on its dimensions.
+    auto dst_desc = is_public_format()
+        ? get_desc().to_type(dst_type) : get_desc().to_default_format();
+    auto dst = buffer ? tensor(dst_desc, buffer) : tensor(dst_desc);
+
+    if (dequantize && has_scale()) {
+      auto& src_scale = get_scale();
+      auto dequantize_scale =
+          utils::fmap(src_scale, [](float s) { return 1.f / s; });
+      auto mask =
+          utils::tensor_scale_mask(src_scale.size(), get_desc().is_grouped());
+      this->reorder_to(dst, {mask, dequantize_scale});
+    } else {
       this->reorder_to(dst);
-
-    if (has_scale()) {
-      dst.set_scale(get_scale());
+      if (has_scale()) {
+        dst.set_scale(get_scale());
+      }
     }
 
     return dst;
