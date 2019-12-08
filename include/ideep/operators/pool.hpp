@@ -31,11 +31,9 @@ struct pooling_forward : public dnnl::pooling_forward {
          padding_r}, aengine);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    if (dst != src) {
-      dst.reinit_if_necessary(pd.dst_desc());
-      if (src.has_scale()) {
-        dst.set_scale(src.get_scale());
-      }
+    dst.reinit_if_necessary(pd.dst_desc());
+    if (src.has_scale()) {
+      dst.set_scale(src.get_scale());
     }
 
     exec_args args {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}};

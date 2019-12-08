@@ -17,7 +17,6 @@ struct sum : public dnnl::sum {
     });
     auto pd = primitive_desc(scales, input_descs, aengine);
 
-    // XPZ: TODO: if inplace is taken into consideration
     output.reinit_if_necessary(pd.dst_desc());
 
     exec_args args {{DNNL_ARG_DST, output}};

@@ -15,7 +15,8 @@ struct eltwise_forward : public dnnl::eltwise_forward {
                       float beta = 0.0,
                       const engine& aengine = engine::cpu_engine()) {
     auto src_in = src;
-    if (aalgorithm != algorithm::eltwise_relu && src.get_data_type() != data_type::f32) {
+    if (aalgorithm != algorithm::eltwise_relu &&
+        src.get_data_type() != data_type::f32) {
       src_in.reinit(src.get_dims(), data_type::f32);
       IDEEP_ENFORCE(src.has_scale(), "Can not find scales");
       IDEEP_ENFORCE(src.get_scale().size() == 1, "Incorrect scale size");
@@ -26,17 +27,18 @@ struct eltwise_forward : public dnnl::eltwise_forward {
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, alpha, beta}, aengine);
 
-    if (dst != src) {
-      dst.reinit(src_in.get_descriptor());
-      if (src_in.has_scale()) dst.set_scale(src_in.get_scale());
+    dst.reinit_if_necessary(src_in.get_descriptor());
+    if (src_in.has_scale()) {
+      dst.set_scale(src_in.get_scale());
     }
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, src_in}, {DNNL_ARG_DST, dst}});
 
-    if (dst.has_scale() && aalgorithm == algorithm::eltwise_relu && dst.get_data_type() == data_type::s8) {
-      tensor::desc dst_u8_desc = dst.get_desc().to_type(data_type::u8);
-      dst.set_desc(dst_u8_desc);
+    // XPZ: ???
+    if (dst.has_scale() && aalgorithm == algorithm::eltwise_relu &&
+        dst.get_data_type() == data_type::s8) {
+      dst.to_type(data_type::u8);
     }
   }
 };

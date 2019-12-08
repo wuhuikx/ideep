@@ -785,6 +785,11 @@ class tensor : public memory {
     to_format(get_desc().to_format(aformat_tag));
   }
 
+  // XPZ: TODO: not a good name
+  inline void to_type(data_type adata_type) {
+    set_desc(get_desc().to_type(adata_type));
+  }
+
   /// Fill the tensor with a src tensor
   /// XPZ: TODO: may replace is_deconv_weights with a enum for other purposes
   void feed_from(const tensor &src, bool is_deconv_weights = false) {

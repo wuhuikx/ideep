@@ -53,8 +53,10 @@ using key_t = std::string;
 const scale_t IDEEP_DEF_SCALE {1.0f};
 
 enum lowp_kind {
-  LOWP_U8S8 = 0,
-  LOWP_S8S8 = 1
+  u8s8 = 0,
+  s8s8 = 1,
+  LOWP_U8S8 = u8s8,
+  LOWP_S8S8 = s8s8,
 };
 
 enum rnn_kind {
