@@ -20,7 +20,7 @@ struct concat : public dnnl::concat {
     auto pd = primitive_desc(axis, input_descs, aengine);
     auto expected_desc = tensor::desc(pd.dst_desc());
 
-    output.reinit_if_necessary(expected_desc);
+    output.reinit_if_possible(expected_desc);
 
     exec_args args {{DNNL_ARG_DST, output}};
 

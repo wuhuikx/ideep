@@ -336,7 +336,7 @@ private:
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc(), src_attr);
     auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc(), weights_attr);
-    dst.reinit_if_necessary(pd.dst_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
     if (!dst_scales.empty() && dst.get_data_type() != data_type::f32) {
       dst.set_scale(dst_scales);
@@ -399,7 +399,7 @@ struct convolution_backward_data : public dnnl::convolution_backward_data {
 
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc());
-    diff_src.reinit_if_necessary(pd.diff_src_desc());
+    diff_src.reinit_if_possible(pd.diff_src_desc());
 
     super(pd).execute(stream::default_stream(), 
                       {{DNNL_ARG_DIFF_DST, expected_diff_dst},
@@ -493,10 +493,10 @@ struct convolution_backward_weights
 
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    diff_weights.reinit_if_necessary(pd.diff_weights_desc());
+    diff_weights.reinit_if_possible(pd.diff_weights_desc());
 
     if (with_diff_bias) {
-      diff_bias.reinit_if_necessary(pd.diff_bias_desc());
+      diff_bias.reinit_if_possible(pd.diff_bias_desc());
       super(pd).execute(stream::default_stream(),
                         {{DNNL_ARG_DIFF_DST, expected_diff_dst},
                          {DNNL_ARG_SRC, expected_src},

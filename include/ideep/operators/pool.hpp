@@ -31,7 +31,7 @@ struct pooling_forward : public dnnl::pooling_forward {
          padding_r}, aengine);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    dst.reinit_if_possible(pd.dst_desc());
     if (src.has_scale()) {
       dst.set_scale(src.get_scale());
     }
@@ -73,7 +73,7 @@ struct pooling_backward : public dnnl::pooling_backward {
         aengine, forward_hints);
 
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
-    diff_src.reinit_if_necessary(pd.diff_src_desc());
+    diff_src.reinit_if_possible(pd.diff_src_desc());
 
     exec_args args {{DNNL_ARG_DIFF_DST, expected_diff_dst},
                     {DNNL_ARG_DIFF_SRC, diff_src}};

@@ -27,7 +27,7 @@ struct eltwise_forward : public dnnl::eltwise_forward {
     auto pd = primitive_desc(
         {aprop_kind, aalgorithm, src_desc, alpha, beta}, aengine);
 
-    dst.reinit_if_necessary(src_in.get_descriptor());
+    dst.reinit_if_possible(pd.dst_desc());
     if (src_in.has_scale()) {
       dst.set_scale(src_in.get_scale());
     }
@@ -65,7 +65,7 @@ struct eltwise_backward : public dnnl::eltwise_backward {
 
   auto expected_diff_dst = diff_dst_.reorder_if_differ_in(pd.diff_dst_desc());
   auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-  diff_src.reinit_if_necessary(pd.diff_src_desc());
+  diff_src.reinit_if_possible(pd.diff_src_desc());
 
   super(pd).execute(stream::default_stream(),
                     {{DNNL_ARG_DIFF_DST, expected_diff_dst},

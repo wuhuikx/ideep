@@ -58,7 +58,7 @@ struct batch_normalization_forward_inference
     std::memcpy(scale_shift.get_data_handle() + scale.get_size(),
                 shift.get_data_handle(), shift.get_size());
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
     if (use_stats) {
       auto expected_mean = mean.reorder_if_differ_in(pd.mean_desc());
@@ -107,9 +107,9 @@ struct batch_normalization_forward_training
     std::memcpy(scale_shift.get_data_handle() + scale.get_size(),
                 shift.get_data_handle(), shift.get_size());
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    mean.reinit_if_necessary(pd.mean_desc());
-    variance.reinit_if_necessary(pd.variance_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    mean.reinit_if_possible(pd.mean_desc());
+    variance.reinit_if_possible(pd.variance_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, expected_src},
@@ -166,8 +166,8 @@ struct batch_normalization_backward
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
     auto expected_mean = mean.reorder_if_differ_in(pd.mean_desc());
     auto expected_variance = variance.reorder_if_differ_in(pd.variance_desc());
-    diff_src.reinit_if_necessary(pd.diff_src_desc());
-    diff_scale_shift.reinit_if_necessary(pd.diff_weights_desc());
+    diff_src.reinit_if_possible(pd.diff_src_desc());
+    diff_scale_shift.reinit_if_possible(pd.diff_weights_desc());
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, expected_src},
@@ -192,8 +192,8 @@ struct batch_normalization_backward
   tensor diff_scale_shift;
   compute(src, mean, variance, diff_dst, scale, diff_src, diff_scale_shift,
           epsilon, aengine);
-  diff_scale.reinit_if_necessary(scale.get_desc());
-  diff_shift.reinit_if_necessary(scale.get_desc());
+  diff_scale.reinit_if_possible(scale.get_desc());
+  diff_shift.reinit_if_possible(scale.get_desc());
   std::memcpy(diff_scale.get_data_handle(), diff_scale_shift.get_data_handle(),
               diff_scale.get_size());
   std::memcpy(diff_shift.get_data_handle(),

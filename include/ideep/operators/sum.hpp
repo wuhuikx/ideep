@@ -8,20 +8,20 @@ struct sum : public dnnl::sum {
   using super = dnnl::sum;
 
   static void compute(const scale_t& scales,
-                      const std::vector<tensor>& inputs,
-                      tensor& output,
+                      const std::vector<tensor>& srcs,
+                      tensor& dst,
                       const engine& aengine = engine::cpu_engine()) {
-    auto input_descs = utils::fmap(inputs, [](const tensor& t) {
+    auto src_descs = utils::fmap(srcs, [](const tensor& t) {
       // "upcast" vector<tensor::desc> to vector<memory::desc>
       return static_cast<memory::desc>(t.get_desc());
     });
-    auto pd = primitive_desc(scales, input_descs, aengine);
+    auto pd = primitive_desc(scales, src_descs, aengine);
 
-    output.reinit_if_necessary(pd.dst_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
-    exec_args args {{DNNL_ARG_DST, output}};
-    for (int i = 0; i < inputs.size(); ++i) {
-      args.insert({DNNL_ARG_MULTIPLE_SRC + i, inputs[i]});
+    exec_args args {{DNNL_ARG_DST, dst}};
+    for (int i = 0; i < srcs.size(); ++i) {
+      args.insert({DNNL_ARG_MULTIPLE_SRC + i, srcs[i]});
     }
 
     super(pd).execute(stream::default_stream(), args);

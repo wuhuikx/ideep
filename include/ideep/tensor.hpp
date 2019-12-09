@@ -552,10 +552,11 @@ class tensor : public memory {
     reinit(t.get_desc(), ahandle, t.get_engine());
   }
 
-  void reinit_if_necessary(const desc &expected_desc) {
-    if (expected_desc != get_desc()) {
-      if (get_desc().has_same_shape_as(expected_desc)) {
-        to_format(desc(expected_desc));
+  void reinit_if_possible(const desc &expected_desc) {
+    auto curr_desc = get_desc();
+    if (expected_desc != curr_desc) {
+      if (curr_desc.has_same_shape_as(expected_desc)) {
+        to_format(expected_desc);
       } else {
         reinit(expected_desc, get_engine());
       }

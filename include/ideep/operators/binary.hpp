@@ -21,7 +21,7 @@ struct binary : public dnnl::binary {
     
     auto expected_src0 = src0.reorder_if_differ_in(pd.src0_desc());
     auto expected_src1 = src1.reorder_if_differ_in(pd.src1_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC_0, expected_src0},

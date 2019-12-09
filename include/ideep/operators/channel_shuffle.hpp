@@ -21,7 +21,7 @@ struct channel_shuffle_forward: public dnnl::shuffle_forward {
         primitive_desc({aprop_kind, src.get_desc(), axis, group_size}, aengine);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, expected_src}, {DNNL_ARG_DST, dst}});
@@ -46,7 +46,7 @@ struct channel_shuffle_backward : public dnnl::shuffle_backward {
         primitive_desc({data_desc, axis, group_size}, aengine, forward_hints);
 
     auto expected_diff_dst = diff_dst.reorder_if_differ_in(pd.diff_dst_desc());
-    diff_src.reinit_if_necessary(pd.diff_src_desc());
+    diff_src.reinit_if_possible(pd.diff_src_desc());
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_DIFF_DST, expected_diff_dst},

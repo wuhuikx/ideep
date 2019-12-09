@@ -26,9 +26,9 @@ struct layer_normalization_forward : public dnnl::layer_normalization_forward {
     std::memcpy(scale_shift.get_data_handle() + scale.get_size(),
                 shift.get_data_handle(), shift.get_size());
     auto expected_src = src.reorder_if_differ_in(pd.src_desc());
-    mean.reinit_if_necessary(pd.mean_desc());
-    variance.reinit_if_necessary(pd.variance_desc());
-    dst.reinit_if_necessary(pd.dst_desc());
+    mean.reinit_if_possible(pd.mean_desc());
+    variance.reinit_if_possible(pd.variance_desc());
+    dst.reinit_if_possible(pd.dst_desc());
 
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, expected_src},
