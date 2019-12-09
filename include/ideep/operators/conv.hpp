@@ -7,7 +7,6 @@ struct convolution_forward : public dnnl::convolution_forward,
                              utils::computation_cache<dnnl::primitive> {
   using super = dnnl::convolution_forward;
 
-  // fp32 w/ bias
   static void compute(const tensor& src,
                       const tensor& weights,
                       const tensor& bias,
@@ -27,27 +26,11 @@ struct convolution_forward : public dnnl::convolution_forward,
                       const lowp_kind alowp_kind = u8s8,
                       const engine& aengine = engine::cpu_engine()) {
     compute_impl</*with_bias=*/true>(
-        src,
-        weights,
-        bias,
-        dst_dims,
-        dst,
-        strides,
-        dilates,
-        padding_l,
-        padding_r,
-        groups,
-        src_scales,
-        weights_scales,
-        dst_scales,
-        attr,
-        aalgorithm,
-        aprop_kind,
-        alowp_kind,
-        aengine);
+        src, weights, bias, dst_dims, dst, strides, dilates, padding_l,
+        padding_r, groups, src_scales, weights_scales, dst_scales, attr,
+        aalgorithm, aprop_kind, alowp_kind, aengine);
   }
 
-  // fp32 w/o bias
   static void compute(const tensor& src,
                       const tensor& weights,
                       const dims& dst_dims,
@@ -67,24 +50,9 @@ struct convolution_forward : public dnnl::convolution_forward,
                       const engine& aengine = engine::cpu_engine()) {
     static tensor dummy_bias;
     compute_impl</*with_bias=*/false>(
-        src,
-        weights,
-        dummy_bias,
-        dst_dims,
-        dst,
-        strides,
-        dilates,
-        padding_l,
-        padding_r,
-        groups,
-        src_scales,
-        weights_scales,
-        dst_scales,
-        attr,
-        aalgorithm,
-        aprop_kind,
-        alowp_kind,
-        aengine);
+        src, weights, dummy_bias, dst_dims, dst, strides, dilates, padding_l,
+        padding_r, groups, src_scales, weights_scales, dst_scales, attr,
+        aalgorithm, aprop_kind, alowp_kind, aengine);
   }
 
   // TODO: XPZ: refactor it
@@ -141,11 +109,12 @@ struct convolution_forward : public dnnl::convolution_forward,
     tensor::desc dst_desc(y_dims, y_dtype);
 
     // FIXME: workaroud winograd format issue in inference
-    // If prop_kind == forward_inference, the dnnl_wino_fmt for weights is required by winograd primitive.
-    // Then, in the cases of variable input shape, the detials of dnnl_wino_fmt will be changed.
-    // And, extra weihgts reorder is inevitable each time, leading to bad performance.
-    // Here, we set the prop_kind to forward, in order to reorder and cache weights as blocked format,
-    // instead of dnnl_wino_fmt.
+    // If prop_kind == forward_inference, the dnnl_wino_fmt for weights is
+    // required by winograd primitive. Then, in the cases of variable input
+    // shape, the detials of dnnl_wino_fmt will be changed. And, extra weihgts
+    // reorder is inevitable each time, leading to bad performance. Here, we set
+    // the prop_kind to forward, in order to reorder and cache weights as
+    // blocked format, instead of dnnl_wino_fmt.
     auto apkind = aprop_kind;
     if (aalgorithm == algorithm::convolution_winograd &&
         aprop_kind == prop_kind::forward_inference) {
@@ -237,6 +206,9 @@ private:
                                  utils::get_vec_hash(dst_scales));
 
     auto comp = fetch_or_create(key, [&]() {
+
+      // TOOD: following code should be refactored if we have chance to redesign
+      // the whole INT8 interface
       auto dst_data_type = data_type::f32;
       if (!weights_scales_in.empty()) {
         IDEEP_ENFORCE(alowp_kind == u8s8 || alowp_kind == s8s8,

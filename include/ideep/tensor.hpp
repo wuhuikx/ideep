@@ -716,7 +716,7 @@ class tensor : public memory {
   /// Recreate a param with completely different content from old one
   /// but reuse the param shell. Notice that after resize, its format
   /// is undefined
-  /// XPZ: For caffe2
+  /// legacy API for caffe2
   void resize(const dims &adims, data_type adata_type) {
     reinit(adims, adata_type, get_engine());
   }
@@ -747,13 +747,24 @@ class tensor : public memory {
     return *this;
   }
 
+  inline void to_default_format() {
+    to_format(get_desc().to_default_format());
+  }
+
+  inline void to_format(format_tag aformat_tag) {
+    to_format(get_desc().to_format(aformat_tag));
+  }
+
+  // XPZ: TODO: not a good name
+  inline void to_type(data_type adata_type) {
+    set_desc(get_desc().to_type(adata_type));
+  }
+
   inline void reorder_from(const tensor &src) {
-    // https://github.com/intel/mkl-dnn/issues/571
     dnnl::reorder(src, *this)
         .execute(stream::default_stream(), const_cast<tensor &>(src), *this);
   }
 
-  // XPZ: TODO: make it private
   inline void reorder_to(tensor &dst, const attr_t &aattr = attr_t()) const {
     auto pd = dnnl::reorder::primitive_desc(*this, dst, aattr);
     dnnl::reorder(pd)
@@ -790,19 +801,6 @@ class tensor : public memory {
     }
 
     return dst;
-  }
-
-  inline void to_default_format() {
-    to_format(get_desc().to_default_format());
-  }
-
-  inline void to_format(format_tag aformat_tag) {
-    to_format(get_desc().to_format(aformat_tag));
-  }
-
-  // XPZ: TODO: not a good name
-  inline void to_type(data_type adata_type) {
-    set_desc(get_desc().to_type(adata_type));
   }
 
   /// Fill the tensor with a src tensor
@@ -874,6 +872,7 @@ class tensor : public memory {
   tensor clone() const {
     tensor dst(get_desc());
     this->reorder_to(dst);
+    if (has_scale()) dst.set_scale(get_scale());
     return dst;
   }
 
@@ -898,7 +897,7 @@ class tensor : public memory {
   bool has_scale() const { return scale_ != nullptr && !scale_->empty(); }
 
   /// Need reorder if current param used by non DNNL routines.
-  /// XPZ: TODO: will be removed
+  // legacy API for caffe2
   inline bool need_reorder() const {
     return (!is_public_format() || get_data_type() != data_type::f32);
   }

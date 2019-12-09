@@ -3,8 +3,6 @@
 
 namespace ideep {
 
-// XPZ: TODO: DECONV FORWARD IS ENTIRELY IDENTICAL TO CONV'S IMPL. MERGE THEM
-
 struct convolution_transpose_forward : public dnnl::deconvolution_forward {
 
   using super = dnnl::deconvolution_forward;
@@ -47,7 +45,6 @@ struct convolution_transpose_forward : public dnnl::deconvolution_forward {
         padding_l, padding_r, groups, attr, aalgorithm, aprop_kind, aengine);
   }
 
-  // TODO: XPZ: refactor it
   static tensor::desc expected_weights_desc(
       const dims& weights_dims,   // iohw
       data_type dtype = data_type::f32,
@@ -152,7 +149,6 @@ struct convolution_transpose_forward : public dnnl::deconvolution_forward {
     auto weights_ = weights.make_grouped_weights(groups, true);
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
-    // TODO: XPZ: is it ok to use src type as dst type?
     tensor::desc dst_desc(dst_dims, src.get_data_type());
 
     auto pd = get_primitive_desc<with_bias>(
