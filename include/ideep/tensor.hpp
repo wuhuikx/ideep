@@ -458,7 +458,7 @@ class tensor : public memory {
   desc dup_descriptor() const { return dup_desc(); }
 
   // Constructs an tensor with no buffer and zero memory description
-  tensor() { reinit({}, nullptr); }
+  tensor() { init({}, nullptr); }
 
   /// Constructs a tensor.
   ///
@@ -467,7 +467,7 @@ class tensor : public memory {
   /// @param ahandle handle.
   tensor(const desc &adesc, void *ahandle,
          const engine &aengine = engine::cpu_engine()) {
-    reinit(adesc, ahandle, aengine);
+    init(adesc, ahandle, aengine);
   }
 
   /// Constructs a memory.
@@ -476,35 +476,35 @@ class tensor : public memory {
   /// @param aengine Engine.
   tensor(const desc &adesc,
          const engine &aengine = engine::cpu_engine()) {
-    reinit(adesc, aengine);
+    init(adesc, aengine);
   }
 
   // format_tag, buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
          void *ahandle, const engine &aengine = engine::cpu_engine()) {
-    reinit(adims, adata_type, aformat_tag, ahandle, aengine);
+    init(adims, adata_type, aformat_tag, ahandle, aengine);
   }
 
   // format_tag, no buffer
   tensor(const dims &adims, data_type adata_type, format_tag aformat_tag,
          const engine &aengine = engine::cpu_engine()) {
-    reinit(adims, adata_type, aformat_tag, aengine);
+    init(adims, adata_type, aformat_tag, aengine);
   }
 
   // no format_tag, buffer
   tensor(const dims &adims, data_type adata_type, void *ahandle,
          const engine &aengine = engine::cpu_engine()) {
-    reinit(adims, adata_type, ahandle, aengine);
+    init(adims, adata_type, ahandle, aengine);
   }
 
   // no format_tag, no buffer
   tensor(const dims &adims, data_type adata_type,
          const engine &aengine = engine::cpu_engine()) {
-    reinit(adims, adata_type, aengine);
+    init(adims, adata_type, aengine);
   }
 
   /// Function that refill tensor with new description. Specifiy extra buffer.
-  void reinit(const desc &adesc, void *ahandle,
+  void init(const desc &adesc, void *ahandle,
               const engine &aengine = engine::cpu_engine()) {
     buffer_.reset();
     scale_.reset();
@@ -513,7 +513,7 @@ class tensor : public memory {
   }
 
   /// Function that refill tensor with new description or buffer
-  void reinit(const desc &adesc, const engine &aengine = engine::cpu_engine()) {
+  void init(const desc &adesc, const engine &aengine = engine::cpu_engine()) {
     buffer_.reset(aengine.malloc(adesc.get_size()), aengine.free);
     scale_.reset();
     eng_ = aengine;
@@ -521,35 +521,35 @@ class tensor : public memory {
   }
 
   // format_tag, buffer
-  void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
+  void init(const dims &adims, data_type adata_type, format_tag aformat_tag,
               void *ahandle, const engine &aengine = engine::cpu_engine()) {
-    reinit({adims, adata_type, aformat_tag}, ahandle, aengine);
+    init({adims, adata_type, aformat_tag}, ahandle, aengine);
   }
 
   // format_tag, no buffer
-  void reinit(const dims &adims, data_type adata_type, format_tag aformat_tag,
+  void init(const dims &adims, data_type adata_type, format_tag aformat_tag,
               const engine &aengine = engine::cpu_engine()) {
-    reinit({adims, adata_type, aformat_tag}, aengine);
+    init({adims, adata_type, aformat_tag}, aengine);
   }
 
   // no format_tag, buffer
-  void reinit(const dims &adims, data_type adata_type, void *ahandle,
+  void init(const dims &adims, data_type adata_type, void *ahandle,
               const engine &aengine = engine::cpu_engine()) {
-    reinit({adims, adata_type, get_default_format(adims)}, ahandle, aengine);
+    init({adims, adata_type, get_default_format(adims)}, ahandle, aengine);
   }
 
   // no format_tag, no buffer
-  void reinit(const dims &adims, data_type adata_type,
+  void init(const dims &adims, data_type adata_type,
               const engine &aengine = engine::cpu_engine()) {
-    reinit({adims, adata_type, get_default_format(adims)}, aengine);
+    init({adims, adata_type, get_default_format(adims)}, aengine);
   }
 
   void reinit_like(const tensor &t) {
-    reinit(t.get_desc(), t.get_engine());
+    init(t.get_desc(), t.get_engine());
   }
 
   void reinit_like(const tensor &t, void *ahandle) {
-    reinit(t.get_desc(), ahandle, t.get_engine());
+    init(t.get_desc(), ahandle, t.get_engine());
   }
 
   void reinit_if_possible(const desc &expected_desc) {
@@ -558,7 +558,7 @@ class tensor : public memory {
       if (curr_desc.has_same_shape_as(expected_desc)) {
         to_format(expected_desc);
       } else {
-        reinit(expected_desc, get_engine());
+        init(expected_desc, get_engine());
       }
     }
   }
@@ -718,7 +718,7 @@ class tensor : public memory {
   /// is undefined
   /// legacy API for caffe2
   void resize(const dims &adims, data_type adata_type) {
-    reinit(adims, adata_type, get_engine());
+    init(adims, adata_type, get_engine());
   }
 
   /// Return an new tensor with new shape
@@ -940,7 +940,7 @@ class tensor : public memory {
     auto buf = std::move(buffer_);
     auto ws = std::move(workspace_);
     auto scale = std::move(scale_);
-    reinit(new_desc, get_data_handle(), get_engine());
+    init(new_desc, get_data_handle(), get_engine());
     buffer_ = std::move(buf);
     workspace_ = std::move(ws);
     scale_ = std::move(scale);

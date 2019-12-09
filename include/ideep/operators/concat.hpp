@@ -103,12 +103,12 @@ struct concat : public dnnl::concat {
 
     dims offset_dims(dst_dims.size(), 0);
     if (add_axis) {
-      dst.reinit(dst_dims, dst_data_type);
+      dst.init(dst_dims, dst_data_type);
     } else {
       // construct dst tensor with dst_dims while keeping the same
       // blocking format as inputs[0]
       auto dst_desc = inputs[0].get_desc().to_dims(dst_dims);
-      dst.reinit(dst_desc);
+      dst.init(dst_desc);
     }
       
     if (dst_data_type != data_type::f32)
