@@ -844,6 +844,15 @@ class tensor : public memory {
     feed_from({adims, adata_type, const_cast<void *>(array)});
   }
 
+  tensor dequantize() const {
+    tensor dst(get_desc().to_type(data_type::f32));
+    IDEEP_ENFORCE(has_scale(), "Can not find scales");
+    // TODO: xpz: support per-channel dequantize
+    IDEEP_ENFORCE(get_scale().size() == 1, "Incorrect scale size");
+    dst.feed_from(*this);
+    return dst;  
+  }
+
   // reorder src to part of this tensor
   void insert_submemory(const tensor &src, const dims &adims,
                         const dims &offsets, const attr_t &attr = attr_t()) {

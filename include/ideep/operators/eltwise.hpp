@@ -14,14 +14,11 @@ struct eltwise_forward : public dnnl::eltwise_forward {
                       float alpha = 0.0,
                       float beta = 0.0,
                       const engine& aengine = engine::cpu_engine()) {
-    auto src_in = src;
-    if (aalgorithm != algorithm::eltwise_relu &&
-        src.get_data_type() != data_type::f32) {
-      src_in.reinit(src.get_dims(), data_type::f32);
-      IDEEP_ENFORCE(src.has_scale(), "Can not find scales");
-      IDEEP_ENFORCE(src.get_scale().size() == 1, "Incorrect scale size");
-      src_in.feed_from(src);
-    }
+    // we should leave dequantization to the framework
+    auto src_in = aalgorithm != algorithm::eltwise_relu &&
+                          src.get_data_type() != data_type::f32
+                      ? src.dequantize()
+                      : src;
     auto src_desc = src_in.get_desc();
 
     auto pd = primitive_desc(
