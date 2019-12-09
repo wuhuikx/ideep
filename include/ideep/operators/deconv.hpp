@@ -93,7 +93,13 @@ struct convolution_transpose_forward : public dnnl::deconvolution_forward {
         padding_l, padding_r, attr_t(), aalgorithm, aprop_kind);
 
     // embed group info into weights_desc
-    return tensor::desc(pd.weights_desc(), groups);
+    if (grouped) {
+      // g, o, i/g, h, w -> g, i/g, o, h, w
+      return tensor::desc(pd.weights_desc(), groups).transpose(1, 2);
+    } else {
+      // o, i/g, h, w -> i/g, o, h, w
+      return tensor::desc(pd.weights_desc(), groups).transpose(0, 1);
+    } 
   }
 
   template <bool with_bias>
