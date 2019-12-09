@@ -723,10 +723,24 @@ class tensor : public memory {
   /// Return an new tensor with new shape
   tensor &reshape(const dims &adims) {
     IDEEP_ENFORCE(has_same_volume(adims), "reshape to incompatible shape");
-    if (adims != get_dims()) {
-      if (!get_desc().is_default()) {
+
+    // count the number of non-one dimensions
+    // e.g. the actual rank of shape [1, 1, 35, 1] is one
+    auto actual_rank = [](const dims &shape) {
+      auto cnt = 0;
+      for (auto d : shape) if (d > 1) cnt++;
+      return cnt > 1;
+    };
+
+    auto old_dims = get_dims();
+    if (adims != old_dims) {
+      // Since we are going to set the desc to new dims with default format,
+      // so we first make sure current tensor is already the default format.
+      // Specifically, the format does not matter if the actual rank <= 1
+      if (!get_desc().is_default() && actual_rank(old_dims) > 1) {
         to_default_format();
       }
+      // set desc with default format
       set_desc({adims, get_data_type()});
     }
     return *this;

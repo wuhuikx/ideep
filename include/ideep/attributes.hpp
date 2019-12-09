@@ -12,7 +12,7 @@ using post_ops = dnnl::post_ops;
 struct attr_t : public dnnl::primitive_attr {
   attr_t() {}
 
-  attr_t(int mask, scale_t& scales) { set_output_scales(mask, scales); }
+  attr_t(int mask, const scale_t& scales) { set_output_scales(mask, scales); }
 
   std::pair<scale_t, int> get_output_scales() const {
     dnnl_dim_t count;

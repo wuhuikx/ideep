@@ -174,6 +174,12 @@ public:
   //   return fetch(create(key, std::forward<Ts>(args)...));
   // }
 
+ static inline value_t& fetch_or_create(
+     const key_t& key, const std::function<value_t()>& callback) {
+    auto it = find(key);
+    return it == end() ? fetch(create((key), callback())) : fetch(it);
+  }
+
   static inline void release(const key_t& key, const value_t& computation) {}
 
   static inline void release(const key_t& key, value_t&& computation) {}
@@ -192,11 +198,6 @@ public:
     return t_store_;
   }
 };
-
-// Possible better performance, but use inside class scope only (private)
-#define fetch_or_create_m(key, cb) ({  \
-    auto it = find(key);  \
-    it == end() ? fetch(create((key), (cb)())) : fetch(it);})
 
 }
 }

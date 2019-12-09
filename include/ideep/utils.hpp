@@ -141,7 +141,7 @@ inline key_t create_key(Ts&&... args) {
 
 template <typename F, typename T,
           typename U = decltype(std::declval<F>()(std::declval<T>()))>
-std::vector<U> fmap(const std::vector<T>& vec, F f) {
+std::vector<U> fmap(const std::vector<T>& vec, const F& f) {
   std::vector<U> result;
   std::transform(vec.begin(), vec.end(), std::back_inserter(result), f);
   return result;
@@ -250,6 +250,36 @@ inline void array_set(T *arr, const U &val, size_t size) {
   for (size_t i = 0; i < size; ++i)
     arr[i] = static_cast<T>(val);
 }
+
+// The following code is derived from Boost C++ library
+// Copyright 2005-2014 Daniel James.
+// Distributed under the Boost Software License, Version 1.0. (See accompanying
+// file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt)
+template <typename T>
+static size_t hash_combine(size_t seed, const T &v) {
+    return seed ^= std::hash<T> {}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+template <typename T>
+static size_t get_array_hash(size_t seed, const T *v, int size) {
+  for (int i = 0; i < size; i++) {
+    seed = hash_combine(seed, v[i]);
+  }
+  return seed;
+}
+
+template <typename T>
+static size_t get_vec_hash(const std::vector<T>& v) {
+  // TODO: constructing string with a given buffer introduces a data copy.
+  // Use string_view if c++17 is available. Or implement our hashing function
+  std::string s(reinterpret_cast<const char*>(v.data()),
+                v.size() * sizeof(v[0]));
+  return std::hash<std::string>{}(s);
+
+  // get_array_hash is not optimized on large buffers
+  // return get_array_hash(0, v.data(), v.size());
+}
+
 
 }
 }
