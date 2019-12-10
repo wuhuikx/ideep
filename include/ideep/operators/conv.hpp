@@ -207,8 +207,7 @@ private:
 
     auto comp = fetch_or_create(key, [&]() {
 
-      // TOOD: following code should be refactored if we have chance to redesign
-      // the whole INT8 interface
+      // TOOD: refactor following code if we redesign the whole INT8 interface
       auto dst_data_type = data_type::f32;
       if (!weights_scales_in.empty()) {
         IDEEP_ENFORCE(alowp_kind == u8s8 || alowp_kind == s8s8,
