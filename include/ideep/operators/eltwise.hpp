@@ -32,7 +32,7 @@ struct eltwise_forward : public dnnl::eltwise_forward {
     super(pd).execute(stream::default_stream(),
                       {{DNNL_ARG_SRC, src_in}, {DNNL_ARG_DST, dst}});
 
-    // XPZ: ???
+    // xpz: ???
     if (dst.has_scale() && aalgorithm == algorithm::eltwise_relu &&
         dst.get_data_type() == data_type::s8) {
       dst.to_type(data_type::u8);

@@ -87,29 +87,6 @@ class tensor : public memory {
       }
     }
 
-    void print_desc() const {
-      auto md = data;
-      printf("\t\t");
-      for (int i = 0; i < md.ndims; i++)
-          printf("%c\t", 'A' + i);
-      printf("\ndims\t\t");
-      for (int i = 0; i < md.ndims; i++)
-          printf("%ld\t", md.dims[i]);
-      printf("\npadded_dims\t");
-      for (int i = 0; i < md.ndims; i++)
-          printf("%ld\t", md.padded_dims[i]);
-      printf("\nstrides\t\t");
-      for (int i = 0; i < md.ndims; i++)
-          printf("%ld\t", md.format_desc.blocking.strides[i]);
-      printf("\n\ninner_idxs\t");
-      for (int i = 0; i < md.format_desc.blocking.inner_nblks; i++)
-          printf("%ld\t", md.format_desc.blocking.inner_idxs[i]);
-      printf("\ninner_blks\t");
-      for (int i = 0; i < md.format_desc.blocking.inner_nblks; i++)
-          printf("%ld\t", md.format_desc.blocking.inner_blks[i]);
-      printf("\n");
-    }
-
     /// Returns dimension vector
     inline dims get_dims() const {
       if (!is_grouped()) {
@@ -445,10 +422,6 @@ class tensor : public memory {
     return desc(*cdesc);
   }
 
-  void print_desc() const {
-    get_desc().print_desc();
-  }
-
   // For backward compatibility. Will be deprecated.
   desc get_descriptor() const { return get_desc(); }
 
@@ -666,16 +639,6 @@ class tensor : public memory {
     return nchw_dims;
   }
 
-  // For debugging only
-  inline void peek_first_four_elems() const {
-    auto data = reinterpret_cast<float *>(get_data_handle());
-    std::cout << data[0] << std::endl;
-    std::cout << data[1] << std::endl;
-    std::cout << data[2] << std::endl;
-    std::cout << data[3] << std::endl;
-    std::cout << std::endl;
-  }
-
   tensor reorder_if_differ_in(const desc &expected_desc, const attr_t &aattr = attr_t()) const {
     if (expected_desc == get_desc()) {
       return *this;
@@ -755,7 +718,7 @@ class tensor : public memory {
     to_format(get_desc().to_format(aformat_tag));
   }
 
-  // XPZ: TODO: not a good name
+  // TODO(xpz): not a good name
   inline void to_type(data_type adata_type) {
     set_desc(get_desc().to_type(adata_type));
   }
@@ -773,9 +736,9 @@ class tensor : public memory {
 
   /// Convert the tensor to public format, and f32 data type by default
   tensor to_public(void *buffer = nullptr, bool dequantize = true) const {
-    // xpz: we may separate dequantization capability from to_public() to a
-    // standalone function, say tensor::dequantize(). The to_public() should
-    // only deal with the format conversions, not data type stuff.
+    // TODO(xpz): we may separate dequantization capability from to_public().
+    // The to_public() should only deal with the format conversions,
+    // not data type stuff.
     auto dt = get_data_type();
     auto dst_type = dequantize && dt != data_type::bf16 ? data_type::f32 : dt;
 
@@ -804,7 +767,7 @@ class tensor : public memory {
   }
 
   /// Fill the tensor with a src tensor
-  /// XPZ: TODO: may replace is_deconv_weights with a enum for other purposes
+  /// TODO(xpz): may replace is_deconv_weights with a enum for other purposes
   void feed_from(const tensor &src, bool is_deconv_weights = false) {
   	scale_t dst_scale, src_scale;
     if (has_scale() && src.has_scale()) {
@@ -847,7 +810,7 @@ class tensor : public memory {
   tensor dequantize() const {
     tensor dst(get_desc().to_type(data_type::f32));
     IDEEP_ENFORCE(has_scale(), "Can not find scales");
-    // TODO: xpz: support per-channel dequantize
+    // TODO(xpz): support per-channel dequantize
     IDEEP_ENFORCE(get_scale().size() == 1, "Incorrect scale size");
     dst.feed_from(*this);
     return dst;  

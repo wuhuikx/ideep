@@ -55,7 +55,6 @@ struct convolution_forward : public dnnl::convolution_forward,
         aalgorithm, aprop_kind, alowp_kind, aengine);
   }
 
-  // TODO: XPZ: refactor it
   static tensor::desc expected_weights_desc(
       const dims& weights_dims,
       data_type dtype = data_type::f32,
@@ -327,7 +326,7 @@ private:
                     {DNNL_ARG_DST, dst}});
     }
 
-    // XPZ: ????????
+    // xpz: ???
     // if (attr.non_negitive_output() && dst.get_data_type() == data_type::s8) {
     //   dst.to_type(data_type::u8);
     // }
