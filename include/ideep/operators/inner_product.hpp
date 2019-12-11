@@ -127,7 +127,7 @@ private:
      if (src.get_data_type() == data_type::f32) {
        src_attr = {0, src_scales_in};
      }
-     
+
      dst_dims = {src_desc.get_dim(0), weights.get_dim(1)};
      int scale_size = (weights_scales_in.size() > 1) ? dst_dims[1] : 1;
      weights_desc = {weights.get_dims(), data_type::s8, format_tag::any};
@@ -158,12 +158,12 @@ private:
      auto wei_zero_point = weights.has_zero_point()
          ? weights.get_zero_point() : std::vector<int32_t>(1);
      IDEEP_ENFORCE(
-         src_zero_point.size() == 1 && wei_zero_point.size() == 1, 
+         src_zero_point.size() == 1, 
 	 "DNNL only support 1-dim zero_point");
      op_attr.set_zero_points(DNNL_ARG_SRC, 
 		     IDEEP_OP_ZP_MASK(src_zero_point.size()), src_zero_point);
      op_attr.set_zero_points(DNNL_ARG_WEIGHTS, 
-		     IDEEP_OP_ZP_MASK(wei_zero_point.size()), wei_zero_point);
+		     IDEEP_OP_ZP_MASK(1), std::vector<int32_t>(1,wei_zero_point[0]));
      
      if (dst_data_type != data_type::f32) {
        auto dst_zero_point = dst.has_zero_point()
