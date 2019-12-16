@@ -30,7 +30,8 @@ struct concat : public dnnl::concat {
     //            of n reorders from input to the proper part of the output
     // In case you have only two inputs there should not be performance 
     // difference between reordering one input to the format of the other one 
-    // and emit the fast concat implementation versus using generic concat which // emits two reorders. So we align all tensors to the same optimial format
+    // and emit the fast concat implementation versus using generic concat which
+    // emits two reorders. So we align all tensors to the same optimial format
     // only when there are more than two inputs.
     auto opt_inputs = inputs;
     if (inputs.size() > 2) {
@@ -103,12 +104,12 @@ struct concat : public dnnl::concat {
 
     dims offset_dims(dst_dims.size(), 0);
     if (add_axis) {
-      dst.init(dst_dims, dst_data_type);
+      dst.reinit_if_possible({dst_dims, dst_data_type});
     } else {
       // construct dst tensor with dst_dims while keeping the same
       // blocking format as inputs[0]
       auto dst_desc = inputs[0].get_desc().to_dims(dst_dims);
-      dst.init(dst_desc);
+      dst.reinit_if_possible(dst_desc);
     }
       
     if (dst_data_type != data_type::f32)

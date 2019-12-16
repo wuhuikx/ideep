@@ -28,8 +28,8 @@ struct dropout_forward {
   template <typename T>
   static void compute_impl(const tensor& src, float ratio, tensor& dst,
                            tensor& mask) {
-    mask.init(src.get_desc());
-    dst.init(src.get_desc());
+    mask.reinit_if_possible(src.get_desc());
+    dst.reinit_if_possible(src.get_desc());
     if (src.has_scale()) {
       dst.set_scale(src.get_scale());
     }
@@ -77,7 +77,7 @@ struct dropout_backward {
   template <typename T>
   static void compute_impl(const tensor& mask, const tensor& diff_dst,
                            tensor& diff_src) {
-    diff_src.init(diff_dst.get_desc());
+    diff_src.reinit_if_possible(diff_dst.get_desc());
 
     const auto size = mask.get_size() / sizeof(T);
     const auto mask_data = static_cast<T*>(mask.get_data_handle());
