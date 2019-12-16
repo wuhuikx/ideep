@@ -868,6 +868,15 @@ class tensor : public memory {
   /// Return whether the param has a scale
   bool has_scale() const { return scale_ != nullptr && !scale_->empty(); }
 
+  /// Return whether the param has a zero_point 
+  bool has_zero_point() const { return zero_point_ != nullptr && !zero_point_->empty(); }
+  
+  /// Return the zero_point of this param.
+  const std::vector<int32_t> &get_zero_point() const { return *zero_point_.get(); }
+
+  /// Set new scale into param
+  void set_zero_point(const std::vector<int32_t> &zp) { zero_point_.reset(new std::vector<int32_t>(zp)); }
+
   /// Need reorder if current param used by non DNNL routines.
   // legacy API for caffe2
   inline bool need_reorder() const {
@@ -938,6 +947,7 @@ class tensor : public memory {
 
   std::shared_ptr<tensor> workspace_;
   std::shared_ptr<scale_t> scale_;
+  std::shared_ptr<std::vector<int32_t>> zero_point_;
   std::shared_ptr<void> buffer_;
   engine eng_;
 };

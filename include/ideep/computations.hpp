@@ -19,6 +19,7 @@
 #include "operators/lbr_gru.hpp"
 #include "operators/lrn.hpp"
 #include "operators/lstm.hpp"
+#include "operators/matmul.hpp"
 #include "operators/pool.hpp"
 #include "operators/softmax.hpp"
 #include "operators/spliter.hpp"

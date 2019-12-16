@@ -224,6 +224,10 @@ inline int tensor_scale_mask(dim scale_size, bool grouped) {
   return scale_size > 1 ? grouped ? 3 : 1 : 0;
 }
 
+inline int tensor_zp_mask(dim zp_size) {
+  return zp_size > 1 ? 1 : 0;
+}
+
 inline uintptr_t mod_ptr(void *ptr, size_t bytes) {
   return reinterpret_cast<uintptr_t>(ptr) & (bytes - 1);
 }
