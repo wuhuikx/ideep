@@ -110,6 +110,7 @@ private:
    auto dst_data_type = data_type::f32;
    tensor::dims dst_dims;
 
+   tensor scales_m, src_zero_point_m, wei_zero_point_m, dst_zero_point_m;
    auto weights_scales_in =
        weights.has_scale() ? weights.get_scale() : weights_scales;
 
@@ -146,33 +147,76 @@ private:
      scale_t op_scales(scale_size), bias_scales(scale_size);
      dst_scales_in = (dst_scales.empty() || dst_data_type == data_type::f32) 
 	     ? IDEEP_DEF_SCALE : dst_scales;
-     for (int i = 0; i < scale_size; i++) {
-       bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
-       op_scales[i] = dst_scales_in[0] / bias_scales[i];
+     
+     bool flag_runtime = true;
+     if (flag_runtime) {
+         op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), {DNNL_RUNTIME_F32_VAL});
+         tensor::desc scales_desc = {{scale_size}, memory::data_type::f32, {1}};
+         scales_m.reinit(scales_desc, aengine);
+         auto s = reinterpret_cast<float *>(scales_m.get_data_handle());
+         for (memory::dim i = 0; i < scale_size; ++i) {
+             bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
+             s[i] = dst_scales_in[0] / bias_scales[i];
+	 }
+     } else {
+         for (int i = 0; i < scale_size; i++) {
+           bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
+           op_scales[i] = dst_scales_in[0] / bias_scales[i];
+         }
+         op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
      }
-     op_attr.set_output_scales(IDEEP_OP_SCALE_MASK(scale_size), op_scales);
-     // op_attr.set_int_output_round_mode(round_mode::round_nearest);
      
      auto src_zero_point = src.has_zero_point()
          ? src.get_zero_point() : std::vector<int32_t>(1);
+     auto src_zero_point_size = src_zero_point.size();
+     IDEEP_ENFORCE(
+         src_zero_point_size == 1, 
+         "DNNL only support 1-dim zero_point");
+     if (flag_runtime) {
+         op_attr.set_zero_points(DNNL_ARG_SRC, IDEEP_OP_ZP_MASK(1), {DNNL_RUNTIME_S32_VAL});
+         tensor::desc src_zero_point_desc = {{src_zero_point_size}, memory::data_type::s32, {1}};
+         src_zero_point_m.reinit(src_zero_point_desc, aengine);
+         auto z = reinterpret_cast<int32_t *>(src_zero_point_m.get_data_handle());
+         for (memory::dim i = 0; i < src_zero_point_size; ++i)
+             z[i] = src_zero_point[i];
+     } else { 
+        op_attr.set_zero_points(DNNL_ARG_SRC, 
+            IDEEP_OP_ZP_MASK(src_zero_point.size()), src_zero_point);
+     } 
+
      auto wei_zero_point = weights.has_zero_point()
          ? weights.get_zero_point() : std::vector<int32_t>(1);
+     size_t wei_zero_point_size = 1;
+     if (flag_runtime) {
+         op_attr.set_zero_points(DNNL_ARG_WEIGHTS, IDEEP_OP_ZP_MASK(1), {DNNL_RUNTIME_S32_VAL});
+         tensor::desc wei_zero_point_desc = {{wei_zero_point_size}, memory::data_type::s32, {1}};
+         wei_zero_point_m.reinit(wei_zero_point_desc, aengine);
+         auto z = reinterpret_cast<int32_t *>(wei_zero_point_m.get_data_handle());
+         for (memory::dim i = 0; i < wei_zero_point_size; ++i)
+             z[i] = wei_zero_point[i];
+     } else { 
+         op_attr.set_zero_points(DNNL_ARG_WEIGHTS, 
+             IDEEP_OP_ZP_MASK(1), std::vector<int32_t>(1,wei_zero_point[0]));
+     }
+
+     auto dst_zero_point = dst.has_zero_point()
+         ? dst.get_zero_point() : std::vector<int32_t>(1);
      IDEEP_ENFORCE(
-         src_zero_point.size() == 1, 
-	 "DNNL only support 1-dim zero_point");
-     op_attr.set_zero_points(DNNL_ARG_SRC, 
-		     IDEEP_OP_ZP_MASK(src_zero_point.size()), src_zero_point);
-     op_attr.set_zero_points(DNNL_ARG_WEIGHTS, 
-		     IDEEP_OP_ZP_MASK(1), std::vector<int32_t>(1,wei_zero_point[0]));
-     
+         dst_zero_point.size() == 1, 
+         "DNNL only support 1-dim zero_point");
+     auto dst_zero_point_size = dst_zero_point.size();
      if (dst_data_type != data_type::f32) {
-       auto dst_zero_point = dst.has_zero_point()
-           ? dst.get_zero_point() : std::vector<int32_t>(1);
-       IDEEP_ENFORCE(
-           dst_zero_point.size() == 1, 
-	   "DNNL only support 1-dim zero_point");
-       op_attr.set_zero_points(DNNL_ARG_DST, 
-  		     IDEEP_OP_ZP_MASK(dst_zero_point.size()), dst_zero_point);
+         if (flag_runtime) {
+             op_attr.set_zero_points(DNNL_ARG_DST, IDEEP_OP_ZP_MASK(1), {DNNL_RUNTIME_S32_VAL});
+             tensor::desc dst_zero_point_desc = {{dst_zero_point_size}, memory::data_type::s32, {1}};
+             dst_zero_point_m.reinit(dst_zero_point_desc, aengine);
+             auto z = reinterpret_cast<int32_t *>(dst_zero_point_m.get_data_handle());
+             for (memory::dim i = 0; i < dst_zero_point_size; ++i)
+                 z[i] = dst_zero_point[i];
+         } else { 
+             op_attr.set_zero_points(DNNL_ARG_DST, 
+  	  	     IDEEP_OP_ZP_MASK(dst_zero_point.size()), dst_zero_point);
+	 }
      }
 
      if (with_bias) {
@@ -224,12 +268,20 @@ private:
                        {{DNNL_ARG_SRC, expected_src},
                         {DNNL_ARG_WEIGHTS, expected_weights},
                         {DNNL_ARG_BIAS, expected_bias},
-                        {DNNL_ARG_DST, dst}});
+                        {DNNL_ARG_DST, dst},
+                        {DNNL_ARG_ATTR_OUTPUT_SCALES, scales_m},
+                        {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC, src_zero_point_m},
+                        {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS, wei_zero_point_m},
+                        {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST, dst_zero_point_m}});
    } else {
      super(pd).execute(stream::default_stream(),
                        {{DNNL_ARG_SRC, expected_src},
                         {DNNL_ARG_WEIGHTS, expected_weights},
-                        {DNNL_ARG_DST, dst}});
+                        {DNNL_ARG_DST, dst},
+                        {DNNL_ARG_ATTR_OUTPUT_SCALES, scales_m},
+                        {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_SRC, src_zero_point_m},
+                        {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_WEIGHTS, wei_zero_point_m},
+                        {DNNL_ARG_ATTR_ZERO_POINTS | DNNL_ARG_DST, dst_zero_point_m}});
    }
   }
 };
