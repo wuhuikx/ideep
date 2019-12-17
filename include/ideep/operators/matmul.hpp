@@ -6,7 +6,7 @@ namespace ideep {
 struct matmul_forward : public dnnl::matmul {
 
   using super = dnnl::matmul;
-  template <bool with_bias = true>
+
   static void compute(
       const tensor& src,
       const tensor& weights,
@@ -34,12 +34,12 @@ struct matmul_forward : public dnnl::matmul {
       const lowp_kind alowp_kind = u8s8,
       const engine& aengine = engine::cpu_engine()) {
     static tensor dummy_bias;
-    compute</*with_bias=*/false>(src, weights, dummy_bias, dst, src_scales,
-                                 weights_scales, dst_scales, attr,
-                                 alowp_kind, aengine);
+    compute_impl</*with_bias=*/false>(src, weights, dummy_bias, dst, src_scales,
+                                      weights_scales, dst_scales, attr,
+                                      alowp_kind, aengine);
   }
 
-  static memory::desc expected_weights_descriptor(
+  static tensor::desc expected_weights_descriptor(
       const dims& weights_dims,
       data_type dtype = data_type::f32,
       data_type x_dtype = data_type::f32,
