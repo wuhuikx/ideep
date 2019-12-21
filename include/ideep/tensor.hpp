@@ -13,7 +13,7 @@ class tensor : public memory {
   using dims_t = dnnl_dims_t;
   using format_kind_t = dnnl_format_kind_t;
   using blocking_desc_t = dnnl_blocking_desc_t;
-  using descriptor = desc; // for backward compatibility
+  using descriptor = tensor::desc; // for backward compatibility
 
   struct desc : public memory::desc {
     friend class tensor;
