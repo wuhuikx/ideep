@@ -481,6 +481,7 @@ class tensor : public memory {
               const engine &aengine = engine::cpu_engine()) {
     buffer_.reset();
     scale_.reset();
+    zero_point_.reset();
     eng_ = aengine;
     reset_internal(adesc, aengine, ahandle);
   }
@@ -489,6 +490,7 @@ class tensor : public memory {
   void init(const desc &adesc, const engine &aengine = engine::cpu_engine()) {
     buffer_.reset(aengine.malloc(adesc.get_size()), aengine.free);
     scale_.reset();
+    zero_point_.reset();
     eng_ = aengine;
     reset_internal(adesc, aengine, buffer_.get());
   }
@@ -541,6 +543,7 @@ class tensor : public memory {
       : memory(t),
         buffer_(t.buffer_),
         scale_(t.scale_),
+        zero_point_(t.zero_point_),
         workspace_(t.workspace_),
         eng_(t.eng_) {}
 
@@ -549,6 +552,7 @@ class tensor : public memory {
       : memory(std::move(t)),
         buffer_(std::move(t.buffer_)),
         scale_(std::move(t.scale_)),
+        zero_point_(std::move(t.zero_point_)),
         workspace_(std::move(t.workspace_)),
         eng_(std::move(t.eng_)) {}
 
@@ -557,6 +561,7 @@ class tensor : public memory {
     memory::operator=(t);
     buffer_ = t.buffer_;
     scale_ = t.scale_;
+    zero_point_ = t.zero_point_;
     workspace_ = t.workspace_;
     eng_ = t.eng_;
     return *this;
@@ -567,6 +572,7 @@ class tensor : public memory {
     memory::operator=(std::move(t));
     buffer_ = std::move(t.buffer_);
     scale_ = std::move(t.scale_);
+    zero_point_ = std::move(t.zero_point_);
     workspace_ = std::move(t.workspace_);
     eng_ = std::move(t.eng_);
     return *this;
