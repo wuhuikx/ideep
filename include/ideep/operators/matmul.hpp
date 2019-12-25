@@ -39,7 +39,7 @@ struct matmul_forward : public dnnl::matmul {
                                       alowp_kind, aengine);
   }
 
-  static tensor::desc expected_weights_descriptor(
+  static tensor::desc expected_weights_desc(
       const dims& weights_dims,
       data_type dtype = data_type::f32,
       data_type x_dtype = data_type::f32,
