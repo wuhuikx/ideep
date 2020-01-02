@@ -519,10 +519,12 @@ class tensor : public memory {
     init({adims, adata_type, get_default_format(adims)}, aengine);
   }
 
+  // legacy API for caffe2
   void reinit_like(const tensor &t) {
     init(t.get_desc(), t.get_engine());
   }
 
+  // legacy API for caffe2
   void reinit_like(const tensor &t, void *ahandle) {
     init(t.get_desc(), ahandle, t.get_engine());
   }
