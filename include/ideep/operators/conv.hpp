@@ -211,14 +211,13 @@ private:
       }
 
       // fill primitive attr
-      scale_t op_scales(scale_size), bias_scales(scale_size);
       dst_scales_in = dst_scales.empty() || dst_data_type == data_type::f32
                           ? IDEEP_DEF_SCALE
                           : dst_scales;
-      for (int i = 0; i < scale_size; i++) {
-        bias_scales[i] = src_scales_in[0] * weights_scales_in[i];
-        op_scales[i] = dst_scales_in[0] / bias_scales[i];
-      }
+
+      scale_t bias_scales, op_scales;
+      std::tie(bias_scales, op_scales) = utils::compute_scales(
+          src_scales_in[0], dst_scales_in[0], weights_scales_in);
 
       if (attr.has_op_kind(kind::sum)) {
         float sum_scale =
@@ -234,7 +233,7 @@ private:
       op_attr.set_output_scales(utils::op_scale_mask(scale_size), op_scales);
 
       src_desc = {src.get_dims(),
-                  alowp_kind == u8s8 ? data_type::u8 : data_type::s8};
+                  alowp_kind == u8s8 ? data_type::u8 : data_type::s8, tag::any};
       if (src.get_data_type() == data_type::f32) {
         src_attr = {0, src_scales_in};
       }
@@ -246,7 +245,7 @@ private:
       }
 
       if (with_bias) {
-        bias_desc = {bias.get_dims(), data_type::s32};
+        bias_desc = {bias.get_dims(), data_type::s32, tag::any};
         if (bias.get_data_type() == data_type::f32) {
           bias_attr = {utils::tensor_scale_mask(scale_size, false),
                        bias_scales};

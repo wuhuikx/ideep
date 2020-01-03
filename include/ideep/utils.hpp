@@ -187,6 +187,18 @@ inline dnnl::algorithm rnn_kind_to_activation(rnn_kind rnn) {
   }
 }
 
+inline std::pair<std::vector<float>, std::vector<float>> compute_scales(
+    float src_scale, float dst_scale, std::vector<float> weight_scales) {
+  auto scale_size = weight_scales.size();
+  std::vector<float> bias_scales(scale_size), op_scales(scale_size);
+
+  for (int i = 0; i < scale_size; i++) {
+    bias_scales[i] = src_scale * weight_scales[i];
+    op_scales[i] = dst_scale / bias_scales[i];
+  }
+  return std::make_pair(std::move(bias_scales), std::move(op_scales));
+}
+
 /** sorts an array of values using @p comparator. While sorting the array
  * of value, the function permutes an array of @p keys accordingly.
  *
