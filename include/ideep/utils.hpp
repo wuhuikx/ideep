@@ -58,87 +58,6 @@ static void bernoulli_generate(const long n, const double p, int* r) {
 #endif
 }
 
-using bytestring = std::string;
-
-inline void to_bytes(bytestring& bytes, const int arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-  if (arg == 0) return;
-  auto len = sizeof(arg) - (__builtin_clz(arg) / 8);
-  bytes.append(as_cstring, len);
-}
-
-inline void to_bytes(bytestring& bytes, const bool arg) {
-  to_bytes(bytes, arg ? 1 : 0);
-  bytes.append(1, 'b');
-}
-
-inline void to_bytes(bytestring& bytes, const float arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-  bytes.append(as_cstring, sizeof(float));
-}
-
-inline void to_bytes(bytestring& bytes, const uint64_t arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-  bytes.append(as_cstring, sizeof(uint64_t));
-}
-
-inline void to_bytes(bytestring& bytes, const int64_t arg) {
-  auto as_cstring = reinterpret_cast<const char*>(&arg);
-  bytes.append(as_cstring, sizeof(int64_t));
-}
-
-template <typename T>
-inline void to_bytes(bytestring& bytes, std::vector<T>& arg) {
-  if (arg.size() > 0) {
-    for (T elems : arg) {
-      to_bytes(bytes, elems);
-      bytes.append(1, 'v');
-    }
-    bytes.pop_back();
-  } else {
-    bytes.append(1, 'v');
-  }
-}
-
-template <typename T>
-inline void to_bytes(bytestring& bytes, const std::vector<T>& arg) {
-  // remove constness, then jumps to `to_bytes(bytestring&, vector<T>&)`
-  to_bytes(bytes, const_cast<std::vector<T>&>(arg));
-}
-
-template <typename T>
-inline void to_bytes(bytestring& bytes, std::vector<T>&& arg) {
-  // `arg` is an lval ref now, then jumps to `to_bytes(bytestring&, vector<T>&)`
-  to_bytes(bytes, arg);
-}
-
-template <typename T,
-          typename = typename std::enable_if<std::is_enum<T>::value>::type>
-inline void to_bytes(bytestring& bytes, T arg) {
-  to_bytes(bytes, static_cast<int>(arg));
-}
-
-template <typename T,
-          typename = typename std::enable_if<std::is_class<T>::value>::type,
-          typename = void>
-inline void to_bytes(bytestring& bytes, const T arg) {
-  arg.to_bytes(bytes);
-}
-
-template <typename T, typename ...Ts>
-inline void to_bytes(bytestring& bytes, T&& arg, Ts&&... args) {
-  to_bytes(bytes, std::forward<T>(arg));
-  bytes.append(1, '*');
-  to_bytes(bytes, std::forward<Ts>(args)...);
-}
-
-template <typename ...Ts>
-inline key_t create_key(Ts&&... args) {
-  key_t k;
-  to_bytes(k, std::forward<Ts>(args)...);
-  return k;
-}
-
 template <typename F, typename T,
           typename U = decltype(std::declval<F>()(std::declval<T>()))>
 std::vector<U> fmap(const std::vector<T>& vec, const F& f) {
@@ -266,36 +185,6 @@ inline void array_set(T *arr, const U &val, size_t size) {
   for (size_t i = 0; i < size; ++i)
     arr[i] = static_cast<T>(val);
 }
-
-// The following code is derived from Boost C++ library
-// Copyright 2005-2014 Daniel James.
-// Distributed under the Boost Software License, Version 1.0. (See accompanying
-// file LICENSE or copy at http://www.boost.org/LICENSE_1_0.txt)
-template <typename T>
-static size_t hash_combine(size_t seed, const T &v) {
-    return seed ^= std::hash<T> {}(v) + 0x9e3779b9 + (seed << 6) + (seed >> 2);
-}
-
-template <typename T>
-static size_t get_array_hash(size_t seed, const T *v, int size) {
-  for (int i = 0; i < size; i++) {
-    seed = hash_combine(seed, v[i]);
-  }
-  return seed;
-}
-
-template <typename T>
-static size_t get_vec_hash(const std::vector<T>& v) {
-  // TODO: constructing string with a given buffer introduces a data copy.
-  // Use string_view if c++17 is available. Or implement our hashing function
-  std::string s(reinterpret_cast<const char*>(v.data()),
-                v.size() * sizeof(v[0]));
-  return std::hash<std::string>{}(s);
-
-  // get_array_hash is not optimized on large buffers
-  // return get_array_hash(0, v.data(), v.size());
-}
-
 
 }
 }

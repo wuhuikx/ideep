@@ -3,8 +3,8 @@
 
 namespace ideep {
 
-struct convolution_forward : public dnnl::convolution_forward,
-                             utils::computation_cache<dnnl::primitive> {
+struct convolution_forward : public dnnl::convolution_forward {
+
   using super = dnnl::convolution_forward;
 
   static void compute(const tensor& src,
@@ -276,20 +276,10 @@ private:
                         ? dst.get_desc()
                         : tensor::desc(dst_dims, dst_data_type);
 
-    auto key = utils::create_key(src_desc, weights_desc, with_bias, strides,
-                                 dilates_, padding_l, padding_r, op_attr);
-    auto comp = fetch_or_create(key, [&]() {
-      auto pd = get_primitive_desc<with_bias>(
-          src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
-          padding_l, padding_r, op_attr, aalgorithm, aprop_kind, aengine);
-      return super(pd);
-    });
-    auto pd = conv_pd_wrapper(comp);
-
-    // auto pd = get_primitive_desc<with_bias>(
-    //     src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
-    //     padding_l, padding_r, op_attr, aalgorithm, aprop_kind, aengine);
-    // auto comp = super(pd);
+    auto pd = get_primitive_desc<with_bias>(
+        src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
+        padding_l, padding_r, op_attr, aalgorithm, aprop_kind, aengine);
+    auto comp = super(pd);
 
     auto expected_src = src.reorder_if_differ_in(pd.src_desc(), src_attr);
     auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc(), weights_attr);
