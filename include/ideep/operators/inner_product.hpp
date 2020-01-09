@@ -42,21 +42,22 @@ struct inner_product_forward : public dnnl::inner_product_forward {
 
   static tensor::desc expected_weights_desc(
       const dims& weights_dims,
+      const dims& src_dims = dims(),
       data_type dtype = data_type::f32,
       data_type x_dtype = data_type::f32,
       prop_kind aprop_kind = prop_kind::forward,
       const engine& aengine = engine::cpu_engine()) {
     auto x_dims = weights_dims;
-    x_dims[0] = 1;
+    x_dims[0] = src_dims.empty() ? 1 : src_dims[0];
     auto y_dims = {x_dims[0], weights_dims[0]};
     auto ndims = weights_dims.size();
     auto y_dtype = (dtype != data_type::s8) ? dtype : data_type::s32;
 
     IDEEP_ENFORCE(x_dims.size() == weights_dims.size(),
                   "Invalid dims for data and weights");
-    tensor::desc src_desc(x_dims, x_dtype);
-    tensor::desc dst_desc(y_dims, y_dtype);
-    tensor::desc weights_desc(weights_dims, dtype);
+    tensor::desc src_desc(x_dims, x_dtype, tag::any);
+    tensor::desc dst_desc(y_dims, y_dtype, tag::any);
+    tensor::desc weights_desc(weights_dims, dtype, tag::any);
     auto pd =
         primitive_desc({aprop_kind, src_desc, weights_desc, dst_desc}, aengine);
     return pd.weights_desc();
