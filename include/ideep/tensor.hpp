@@ -893,10 +893,12 @@ class tensor : public memory {
     auto buf = std::move(buffer_);
     auto ws = std::move(workspace_);
     auto scale = std::move(scale_);
+    auto zp = std::move(zero_point_);
     init(new_desc, get_data_handle(), get_engine());
     buffer_ = std::move(buf);
     workspace_ = std::move(ws);
     scale_ = std::move(scale);
+    zero_point_ = std::move(zp);
     return *this;
   }
 
