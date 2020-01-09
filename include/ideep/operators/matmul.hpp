@@ -193,7 +193,15 @@ private:
        src_scale[0] = 1.0f / src_scale[0];
        src_attr = {0, src_scale};
      }
-     weights_desc = weights.get_desc().to_format_any();
+
+     // We intentionally didn't set weight desc to format `any` so DNNL wouldn't
+     // have to determine weight format for us. Because the weight tensor from
+     // pytorch may have a transposed format (say `ba`). However, DNNL would
+     // choose plain format for it by default (`ab` in this case), which would
+     // introduces *an extra reorder* afterwards. Here we keep the weight format
+     // untouched thanks to optimizations for both plain and transposed formats
+     // in DNNL.
+     weights_desc = weights.get_desc();
      IDEEP_ENFORCE(weights.get_data_type() == data_type::f32,
                    "Incorrect data type in weights");
      if (with_bias) {
