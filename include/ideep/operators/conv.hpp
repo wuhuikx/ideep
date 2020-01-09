@@ -3,10 +3,92 @@
 
 namespace ideep {
 
+struct convolution_forward_params {
+  dnnl::convolution_forward::primitive_desc pd;
+  // bias_attr contains requantization scales for bias
+  attr_t bias_attr;
+  scale_t dst_scales;
+  int groups;
+  tensor scratchpad;
+};
+
 struct convolution_forward : public dnnl::convolution_forward {
 
   using super = dnnl::convolution_forward;
 
+  // prepare with bias
+  static void prepare(
+      convolution_forward_params& param,
+      const tensor& src,
+      const tensor& weights,
+      const tensor& bias,
+      const dims& dst_dims,
+      tensor& dst,
+      const dims& strides,
+      const dims& dilates,
+      const dims& padding_l,
+      const dims& padding_r,
+      int groups,
+      const scale_t& src_scales = scale_t(),
+      const scale_t& weights_scales = scale_t(),
+      const scale_t& dst_scales = scale_t(),
+      const attr_t& attr = attr_t(),
+      algorithm aalgorithm = algorithm::convolution_direct,
+      prop_kind aprop_kind = prop_kind::forward,
+      const lowp_kind alowp_kind = u8s8,
+      const engine& aengine = engine::cpu_engine()) {
+    do_prepare</*with_bias=*/true>(
+        param, src, weights, bias, dst_dims, dst, strides, dilates,
+        padding_l, padding_r, groups, src_scales, weights_scales, dst_scales,
+        attr, aalgorithm, aprop_kind, alowp_kind, aengine);
+  }
+
+  // prepare without bias
+  static void prepare(
+      convolution_forward_params& param,
+      const tensor& src,
+      const tensor& weights,
+      const dims& dst_dims,
+      tensor& dst,
+      const dims& strides,
+      const dims& dilates,
+      const dims& padding_l,
+      const dims& padding_r,
+      int groups,
+      const scale_t& src_scales = scale_t(),
+      const scale_t& weights_scales = scale_t(),
+      const scale_t& dst_scales = scale_t(),
+      const attr_t& attr = attr_t(),
+      algorithm aalgorithm = algorithm::convolution_direct,
+      prop_kind aprop_kind = prop_kind::forward,
+      const lowp_kind alowp_kind = u8s8,
+      const engine& aengine = engine::cpu_engine()) {
+    static tensor dummy_bias;
+    do_prepare</*with_bias=*/false>(
+        param, src, weights, dummy_bias, dst_dims, dst, strides, dilates,
+        padding_l, padding_r, groups, src_scales, weights_scales, dst_scales,
+        attr, aalgorithm, aprop_kind, alowp_kind, aengine);
+  }
+
+  // compute with bias
+  static void compute(const convolution_forward_params& param,
+                      const tensor& src,
+                      const tensor& weights,
+                      const tensor& bias,
+                      tensor& dst) {
+    do_compute</*with_bias=*/true>(param, src, weights, bias, dst);
+  }
+
+  // compute without bias
+  static void compute(const convolution_forward_params& param,
+                      const tensor& src,
+                      const tensor& weights,
+                      tensor& dst) {
+    static tensor dummy_bias;
+    do_compute</*with_bias=*/false>(param, src, weights, dummy_bias, dst);
+  }
+
+  // 2-in-1 compute (prepare & compute) with bias
   static void compute(const tensor& src,
                       const tensor& weights,
                       const tensor& bias,
@@ -25,12 +107,15 @@ struct convolution_forward : public dnnl::convolution_forward {
                       prop_kind aprop_kind = prop_kind::forward,
                       const lowp_kind alowp_kind = u8s8,
                       const engine& aengine = engine::cpu_engine()) {
-    compute_impl</*with_bias=*/true>(
-        src, weights, bias, dst_dims, dst, strides, dilates, padding_l,
-        padding_r, groups, src_scales, weights_scales, dst_scales, attr,
-        aalgorithm, aprop_kind, alowp_kind, aengine);
+    convolution_forward_params params;
+    do_prepare</*with_bias=*/true>(
+        params, src, weights, bias, dst_dims, dst, strides, dilates, 
+        padding_l, padding_r, groups, src_scales, weights_scales, dst_scales,
+        attr, aalgorithm, aprop_kind, alowp_kind, aengine);
+    do_compute</*with_bias=*/true>(params, src, weights, bias, dst);
   }
 
+  // 2-in-1 compute (prepare & compute) without bias
   static void compute(const tensor& src,
                       const tensor& weights,
                       const dims& dst_dims,
@@ -49,10 +134,12 @@ struct convolution_forward : public dnnl::convolution_forward {
                       const lowp_kind alowp_kind = u8s8,
                       const engine& aengine = engine::cpu_engine()) {
     static tensor dummy_bias;
-    compute_impl</*with_bias=*/false>(
-        src, weights, dummy_bias, dst_dims, dst, strides, dilates, padding_l,
-        padding_r, groups, src_scales, weights_scales, dst_scales, attr,
-        aalgorithm, aprop_kind, alowp_kind, aengine);
+    convolution_forward_params params;
+    do_prepare</*with_bias=*/false>(
+        params, src, weights, dummy_bias, dst_dims, dst, strides, dilates, 
+        padding_l, padding_r, groups, src_scales, weights_scales, dst_scales,
+        attr, aalgorithm, aprop_kind, alowp_kind, aengine);
+    do_compute</*with_bias=*/false>(params, src, weights, dummy_bias, dst);
   }
 
   static tensor::desc expected_weights_desc(
@@ -162,24 +249,27 @@ struct convolution_forward : public dnnl::convolution_forward {
 
 private:
   template <bool with_bias>
-  static void compute_impl(const tensor& src,
-                           const tensor& weights,
-                           const tensor& bias,
-                           const dims& dst_dims,
-                           tensor& dst,
-                           const dims& strides,
-                           const dims& dilates,
-                           const dims& padding_l,
-                           const dims& padding_r,
-                           int groups,
-                           const scale_t& src_scales,
-                           const scale_t& weights_scales,
-                           const scale_t& dst_scales,
-                           const attr_t& attr,
-                           algorithm aalgorithm,
-                           prop_kind aprop_kind,
-                           const lowp_kind alowp_kind,
-                           const engine& aengine) {
+  static void do_prepare(
+      convolution_forward_params& param,
+      const tensor& src,
+      const tensor& weights,
+      const tensor& bias,
+      const dims& dst_dims,
+      tensor& dst,
+      const dims& strides,
+      const dims& dilates,
+      const dims& padding_l,
+      const dims& padding_r,
+      int groups,
+      const scale_t& src_scales,
+      const scale_t& weights_scales,
+      const scale_t& dst_scales,
+      const attr_t& attr,
+      algorithm aalgorithm,
+      prop_kind aprop_kind,
+      const lowp_kind alowp_kind,
+      const engine& aengine) {
+
     scale_t dst_scales_in;
     auto dst_data_type = data_type::f32;
     tensor::desc src_desc, weights_desc, bias_desc;
@@ -189,7 +279,7 @@ private:
     auto weights_ = weights.make_grouped_weights(groups);
     auto dilates_ = utils::get_compatible_dilates(dilates);
 
-    auto weights_scales_in =
+    auto& weights_scales_in =
         weights_.has_scale() ? weights_.get_scale() : weights_scales;
     if (!weights_scales_in.empty()) {
       IDEEP_ENFORCE(alowp_kind == u8s8 || alowp_kind == s8s8,
@@ -272,6 +362,8 @@ private:
       }
     }
 
+    op_attr.set_scratchpad_mode(dnnl::scratchpad_mode::user);
+
     auto dst_desc = attr.has_op_kind(kind::sum)
                         ? dst.get_desc()
                         : tensor::desc(dst_dims, dst_data_type);
@@ -279,34 +371,44 @@ private:
     auto pd = get_primitive_desc<with_bias>(
         src_desc, weights_desc, bias_desc, dst_desc, strides, dilates_,
         padding_l, padding_r, op_attr, aalgorithm, aprop_kind, aengine);
-    auto comp = super(pd);
 
-    auto expected_src = src.reorder_if_differ_in(pd.src_desc(), src_attr);
-    auto expected_weights = weights_.reorder_if_differ_in(pd.weights_desc(), weights_attr);
+    // allocate scratchpad
+    tensor scratchpad(pd.scratchpad_desc());
+
+    param = {pd, bias_attr, dst_scales, groups, scratchpad};
+  }
+
+  template <bool with_bias>
+  static void do_compute(const convolution_forward_params& param,
+                         const tensor& src, const tensor& weights,
+                         const tensor& bias, tensor& dst) {
+    auto& pd = param.pd;
+    auto scratchpad = param.scratchpad;
+    auto expected_src = src.reorder_if_differ_in(pd.src_desc());
+    auto expected_weights = weights.make_grouped_weights(param.groups)
+                                .reorder_if_differ_in(pd.weights_desc());
     dst.reinit_if_possible(pd.dst_desc());
 
-    if (!dst_scales.empty() && dst.get_data_type() != data_type::f32) {
-      dst.set_scale(dst_scales);
+    if (!param.dst_scales.empty() && dst.get_data_type() != data_type::f32) {
+      dst.set_scale(param.dst_scales);
     }
 
     if (with_bias) {
-      auto expected_bias = bias.reorder_if_differ_in(pd.bias_desc(), bias_attr);
-      comp.execute(stream::default_stream(), 
-                   {{DNNL_ARG_SRC, expected_src},
-                    {DNNL_ARG_WEIGHTS, expected_weights},
-                    {DNNL_ARG_BIAS, expected_bias},
-                    {DNNL_ARG_DST, dst}});
+      auto expected_bias =
+          bias.reorder_if_differ_in(pd.bias_desc(), param.bias_attr);
+      super(pd).execute(stream::default_stream(), 
+                        {{DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_WEIGHTS, expected_weights},
+                         {DNNL_ARG_BIAS, expected_bias},
+                         {DNNL_ARG_DST, dst},
+                         {DNNL_ARG_SCRATCHPAD, scratchpad}});
     } else {
-      comp.execute(stream::default_stream(), 
-                   {{DNNL_ARG_SRC, expected_src},
-                    {DNNL_ARG_WEIGHTS, expected_weights},
-                    {DNNL_ARG_DST, dst}});
+      super(pd).execute(stream::default_stream(), 
+                        {{DNNL_ARG_SRC, expected_src},
+                         {DNNL_ARG_WEIGHTS, expected_weights},
+                         {DNNL_ARG_DST, dst},
+                         {DNNL_ARG_SCRATCHPAD, scratchpad}});
     }
-
-    // xpz: ???
-    // if (attr.non_negitive_output() && dst.get_data_type() == data_type::s8) {
-    //   dst.to_type(data_type::u8);
-    // }
   }
 };
 
