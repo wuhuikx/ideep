@@ -1,7 +1,6 @@
 #ifndef IDEEP_TENSOR_HPP
 #define IDEEP_TENSOR_HPP
 
-#include "abstract_types.hpp"
 #include "attributes.hpp"
 #include "utils.hpp"
 
