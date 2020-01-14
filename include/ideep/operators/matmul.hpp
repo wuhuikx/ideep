@@ -47,7 +47,7 @@ struct matmul_forward : public dnnl::matmul {
     auto ndims = weights_dims.size();
     auto x_dims = weights_dims;
     x_dims[ndims-2] = 1;
-    x_dims[ndims-1] = weights_dims[0];
+    x_dims[ndims-1] = weights_dims[ndims-2];
     auto y_dims = {x_dims[0], weights_dims[1]};
     if (ndims == 3) 
         y_dims = {x_dims[0], x_dims[1], weights_dims[2]};
@@ -80,7 +80,11 @@ private:
    attr_t op_attr, src_attr, weights_attr, bias_attr;
    scale_t dst_scales_in;
    auto dst_data_type = data_type::f32;
+
    tensor::dims dst_dims = {src.get_dim(0), weights.get_dim(1)};
+   auto ndims = weights.ndims();
+   if (ndims == 3) 
+       dst_dims = {src.get_dim(0), src.get_dim(1), weights.get_dim(2)};
 
    auto weights_scales_in =
        weights.has_scale() ? weights.get_scale() : weights_scales;
@@ -99,8 +103,8 @@ private:
        src_attr = {0, src_scales_in};
      }
 
-     int scale_size = (weights_scales_in.size() > 1) ? weights.get_dim(1) : 1;
-     weights_desc = {weights.get_dims(), data_type::s8, tag::any};
+     int scale_size = (weights_scales_in.size() > 1) ? weights.get_dim(0) : 1;
+     weights_desc = weights.get_desc();
      if (weights.get_data_type() == data_type::f32) {
        weights_attr = {utils::tensor_scale_mask(scale_size, false), 
                        weights_scales_in};
@@ -210,15 +214,7 @@ private:
        bias_desc = bias.get_desc().to_format_any();
      }
    }
-   //  auto src_desc_in = src_desc.to_format_any();
-   //  tensor::desc weights_desc_in;
-   //   if (weights_desc.get_data_type() == data_type::s8 ||
-   //       weights_desc.get_data_type() == data_type::u8)
-   //     weights_desc_in = weights_desc.to_format_any();
-   //   else
-   //     weights_desc_in = weights_desc;
-   //  auto bias_desc_in =
-   //      with_bias ? bias_desc.to_format_any() : tensor::desc();
+   
    tensor::desc dst_desc(dst_dims, dst_data_type, tag::any);
    auto pd = with_bias
        ? primitive_desc({src_desc, weights_desc, bias_desc, dst_desc},
