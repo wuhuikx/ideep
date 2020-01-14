@@ -820,14 +820,6 @@ class tensor : public memory {
     return dst;
   }
 
-  // data copy
-  tensor clone() const {
-    tensor dst(get_desc());
-    this->reorder_to(dst);
-    if (has_scale()) dst.set_scale(get_scale());
-    return dst;
-  }
-
   void init_workspace(const desc &desc) {
     auto workspace = new tensor(desc, get_engine());
     workspace_.reset(workspace);
@@ -868,7 +860,11 @@ class tensor : public memory {
   }
 
   tensor permute(const std::vector<int> &permute_axes = {}) const {
-    return clone().permute_(permute_axes);
+    auto src_mask = *this;
+    src_mask.permute_(permute_axes);
+    auto dst = tensor(src_mask.get_desc().to_default_format());
+    src_mask.reorder_to(dst);
+    return dst;
   }
 
   tensor& transpose_(dim dim0, dim dim1) {
@@ -876,7 +872,11 @@ class tensor : public memory {
   }
 
   tensor transpose(dim dim0, dim dim1) const {
-    return clone().transpose_(dim0, dim1);
+    auto src_mask = *this;
+    src_mask.transpose_(dim0, dim1);
+    auto dst = tensor(src_mask.get_desc().to_default_format());
+    src_mask.reorder_to(dst);
+    return dst;
   }
 
   // For backward compatibility. Will be deprecated
